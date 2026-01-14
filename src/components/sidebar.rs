@@ -63,6 +63,7 @@ pub enum SidebarMsg {
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
     OpenFirstImage,
+    ScrollToSelection,
 }
 
 #[derive(Debug, Clone)]
@@ -360,9 +361,16 @@ impl SimpleComponent for SidebarModel {
                     self.refresh_view();
                     
                     self.directories.broadcast(DirectoryItemMsg::UpdateSelection(Some(path.clone())));
-                    self.scroll_to_selected_directory();
                     
-                    // Removed eager OpenImage
+                    let sender_clone = _sender.clone();
+                    gtk4::glib::timeout_add_local(
+                        std::time::Duration::from_millis(100),
+                        move || {
+                            sender_clone.input(SidebarMsg::ScrollToSelection);
+                            gtk4::glib::ControlFlow::Break
+                        }
+                    );
+
                 } else {
                     self.current_path = path.to_string_lossy().to_string();
                     self.preview_archive_path = None;
@@ -546,89 +554,16 @@ impl SimpleComponent for SidebarModel {
             }
              SidebarMsg::OpenNextDir => {
                  let current_ref = self.selected_dir_path.clone().unwrap_or_else(|| PathBuf::from(&self.current_path));
-                 let parent_path = if self.selected_dir_path.is_some() {
-                     Some(PathBuf::from(&self.current_path))
-                 } else {
-                     current_ref.parent().map(|p| p.to_path_buf())
-                 };
-
-                 if let Some(parent) = parent_path {
-                     if let Ok(entries) = std::fs::read_dir(parent) {
-                         let mut siblings = Vec::new();
-                         for entry in entries.flatten() {
-                             let p = entry.path();
-                             if p.is_dir() || (p.is_file() && p.extension().map_or(false, |e| e.to_string_lossy().to_lowercase() == "zip")) {
-                                 if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
-                                      if !name.starts_with('.') {
-                                          siblings.push((name.to_string(), p));
-                                      }
-                                 }
-                             }
-                         }
-                         
-                         match self.dir_sort {
-                             SortType::NameAsc => siblings.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
-                             SortType::NameDesc => { siblings.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); siblings.reverse(); },
-                             SortType::DateAsc => siblings.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
-                             SortType::DateDesc => { siblings.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); siblings.reverse(); },
-                             SortType::SizeAsc => siblings.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
-                             SortType::SizeDesc => { siblings.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); siblings.reverse(); },
-                         }
-
-                         if let Some(pos) = siblings.iter().position(|x| x.1 == current_ref) {
-                             if pos + 1 < siblings.len() {
-                                 let target = &siblings[pos + 1].1;
-                                 if self.selected_dir_path.is_some() {
-                                     _sender.input(SidebarMsg::OpenDirectory(target.clone()));
-                                 } else {
-                                     _sender.input(SidebarMsg::UpdatePath(target.clone()));
-                                 }
-                             }
-                         }
-                     }
+                 
+                 if let Some(target) = self.find_neighbor_directory(&current_ref, true) {
+                     _sender.input(SidebarMsg::OpenDirectory(target));
                  }
              }
              SidebarMsg::OpenPrevDir => {
                  let current_ref = self.selected_dir_path.clone().unwrap_or_else(|| PathBuf::from(&self.current_path));
-                 let parent_path = if self.selected_dir_path.is_some() {
-                     Some(PathBuf::from(&self.current_path))
-                 } else {
-                     current_ref.parent().map(|p| p.to_path_buf())
-                 };
-
-                 if let Some(parent) = parent_path {
-                     if let Ok(entries) = std::fs::read_dir(parent) {
-                         let mut siblings = Vec::new();
-                         for entry in entries.flatten() {
-                             let p = entry.path();
-                             if p.is_dir() || (p.is_file() && p.extension().map_or(false, |e| e.to_string_lossy().to_lowercase() == "zip")) {
-                                 if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
-                                      if !name.starts_with('.') {
-                                          siblings.push((name.to_string(), p));
-                                      }
-                                 }
-                             }
-                         }
-                         match self.dir_sort {
-                             SortType::NameAsc => siblings.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
-                             SortType::NameDesc => { siblings.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); siblings.reverse(); },
-                             SortType::DateAsc => siblings.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
-                             SortType::DateDesc => { siblings.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); siblings.reverse(); },
-                             SortType::SizeAsc => siblings.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
-                             SortType::SizeDesc => { siblings.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); siblings.reverse(); },
-                         }
-
-                         if let Some(pos) = siblings.iter().position(|x| x.1 == current_ref) {
-                             if pos > 0 {
-                                 let target = &siblings[pos - 1].1;
-                                 if self.selected_dir_path.is_some() {
-                                     _sender.input(SidebarMsg::OpenDirectory(target.clone()));
-                                 } else {
-                                     _sender.input(SidebarMsg::UpdatePath(target.clone()));
-                                 }
-                             }
-                         }
-                     }
+                 
+                 if let Some(target) = self.find_neighbor_directory(&current_ref, false) {
+                     _sender.input(SidebarMsg::OpenDirectory(target));
                  }
              }
              SidebarMsg::SelectImage(path) => {
@@ -651,11 +586,33 @@ impl SimpleComponent for SidebarModel {
                      let _ = _sender.output(SidebarOutput::ClearImage);
                  }
              }
+             SidebarMsg::ScrollToSelection => {
+                 self.scroll_to_selected_directory();
+             }
         }
     }
 }
 
 impl SidebarModel {
+    fn find_neighbor_directory(&self, current: &PathBuf, is_next: bool) -> Option<PathBuf> {
+        let parent = current.parent()?;
+        let (dirs, _) = self.scan_directory(&parent.to_path_buf());
+        
+        let idx = dirs.iter().position(|(_, p, _)| p == current)?;
+        
+        if is_next {
+            if idx + 1 < dirs.len() {
+                return Some(dirs[idx + 1].1.clone());
+            }
+        } else {
+            if idx > 0 {
+                return Some(dirs[idx - 1].1.clone());
+            }
+        }
+        
+        // Recursive step
+        self.find_neighbor_directory(&parent.to_path_buf(), is_next)
+    }
     fn scroll_to_selected_directory(&self) {
         if let Some(sw) = &self.directories_scrolled_window {
             let mut found_idx = None;
