@@ -36,6 +36,38 @@ pub enum SettingsDialogMsg {
     CancelCapture,
     CaptureInput(InputSpec),
     ResetInputs,
+    UpdateMouseBinding(MouseInputType, Option<Action>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseInputType {
+    RightClick,
+    MiddleClick,
+    ScrollUp,
+    ScrollDown,
+    LeftDouble,
+}
+
+impl MouseInputType {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::RightClick => "Right Click",
+            Self::MiddleClick => "Middle Click",
+            Self::ScrollUp => "Scroll Up",
+            Self::ScrollDown => "Scroll Down",
+            Self::LeftDouble => "Left Double Click",
+        }
+    }
+
+    fn to_input_spec(&self) -> InputSpec {
+        match self {
+            Self::RightClick => InputSpec::Mouse { button: 3, modifiers: 0, double_click: false },
+            Self::MiddleClick => InputSpec::Mouse { button: 2, modifiers: 0, double_click: false },
+            Self::ScrollUp => InputSpec::Scroll { direction: crate::input_settings::ScrollDirection::Up, modifiers: 0 },
+            Self::ScrollDown => InputSpec::Scroll { direction: crate::input_settings::ScrollDirection::Down, modifiers: 0 },
+            Self::LeftDouble => InputSpec::Mouse { button: 1, modifiers: 0, double_click: true },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -68,10 +100,20 @@ impl SimpleComponent for SettingsDialogModel {
             // Key Controller for Capturing
             add_controller = gtk4::EventControllerKey {
                 connect_key_pressed[sender] => move |_, key, _, modifiers| {
-                    sender.input(SettingsDialogMsg::CaptureInput(InputSpec::Keyboard {
-                         keyval: key.into_glib(),
-                         modifiers: modifiers.bits(),
-                    }));
+                    let is_modifier = matches!(key,
+                        gdk::Key::Shift_L | gdk::Key::Shift_R |
+                        gdk::Key::Control_L | gdk::Key::Control_R |
+                        gdk::Key::Alt_L | gdk::Key::Alt_R |
+                        gdk::Key::Meta_L | gdk::Key::Meta_R |
+                        gdk::Key::Super_L | gdk::Key::Super_R
+                    );
+
+                    if !is_modifier {
+                        sender.input(SettingsDialogMsg::CaptureInput(InputSpec::Keyboard {
+                             keyval: key.into_glib(),
+                             modifiers: modifiers.bits(),
+                        }));
+                    }
                     gtk4::glib::Propagation::Proceed
                 }
             },
@@ -256,13 +298,20 @@ impl SimpleComponent for SettingsDialogModel {
                                         connect_clicked => SettingsDialogMsg::ResetInputs,
                                     }
                                 },
+                                
+                                // Keyboard Section
+                                gtk4::Label {
+                                    set_label: "Keyboard Shortcuts",
+                                    set_xalign: 0.0,
+                                    add_css_class: "title-4",
+                                    set_margin_top: 10,
+                                },
 
                                 gtk4::ListBox {
                                     set_selection_mode: gtk4::SelectionMode::None,
                                     add_css_class: "boxed-list",
                                     
-                                    // Iterate manually for now
-                                    // Row 1: PrevDir
+                                    // PrevDir
                                     gtk4::ListBoxRow {
                                         gtk4::Box {
                                             set_orientation: gtk4::Orientation::Horizontal,
@@ -275,12 +324,12 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::PrevDir)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::PrevDir)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::PrevDir)); }
                                             }
                                         }
                                     },
-                                    // Row 2: NextDir
+                                    // NextDir
                                     gtk4::ListBoxRow {
                                         gtk4::Box {
                                             set_orientation: gtk4::Orientation::Horizontal,
@@ -293,12 +342,12 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::NextDir)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::NextDir)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::NextDir)); }
                                             }
                                         }
                                     },
-                                    // Row 3: PrevPage
+                                    // PrevPage
                                     gtk4::ListBoxRow {
                                         gtk4::Box {
                                             set_orientation: gtk4::Orientation::Horizontal,
@@ -311,7 +360,7 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::PrevPage)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::PrevPage)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::PrevPage)); }
                                             }
                                         }
@@ -329,44 +378,8 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::NextPage)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::NextPage)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::NextPage)); }
-                                            }
-                                        }
-                                    },
-                                    // PrevPageSingle
-                                    gtk4::ListBoxRow {
-                                        gtk4::Box {
-                                            set_orientation: gtk4::Orientation::Horizontal,
-                                            set_spacing: 10,
-                                            set_margin_all: 5,
-                                            gtk4::Label {
-                                                set_label: Action::PrevPageSingle.description(),
-                                                set_hexpand: true,
-                                                set_xalign: 0.0,
-                                            },
-                                            gtk4::Button {
-                                                #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::PrevPageSingle)),
-                                                connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::PrevPageSingle)); }
-                                            }
-                                        }
-                                    },
-                                    // NextPageSingle
-                                    gtk4::ListBoxRow {
-                                        gtk4::Box {
-                                            set_orientation: gtk4::Orientation::Horizontal,
-                                            set_spacing: 10,
-                                            set_margin_all: 5,
-                                            gtk4::Label {
-                                                set_label: Action::NextPageSingle.description(),
-                                                set_hexpand: true,
-                                                set_xalign: 0.0,
-                                            },
-                                            gtk4::Button {
-                                                #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::NextPageSingle)),
-                                                connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::NextPageSingle)); }
                                             }
                                         }
                                     },
@@ -383,7 +396,7 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::ToggleFullscreen)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::ToggleFullscreen)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::ToggleFullscreen)); }
                                             }
                                         }
@@ -401,7 +414,7 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::ZoomIn)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::ZoomIn)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::ZoomIn)); }
                                             }
                                         }
@@ -419,7 +432,7 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::ZoomOut)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::ZoomOut)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::ZoomOut)); }
                                             }
                                         }
@@ -437,7 +450,7 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::ResetZoom)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::ResetZoom)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::ResetZoom)); }
                                             }
                                         }
@@ -455,7 +468,7 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::ToggleSpread)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::ToggleSpread)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::ToggleSpread)); }
                                             }
                                         }
@@ -473,14 +486,324 @@ impl SimpleComponent for SettingsDialogModel {
                                             },
                                             gtk4::Button {
                                                 #[watch]
-                                                set_label: &format_specs(model.input_map.map.get(&Action::ToggleRTL)),
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::ToggleRTL)),
                                                 connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::ToggleRTL)); }
                                             }
                                         }
                                     },
-                                }
+                                    // PrevPageSingle
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: Action::PrevPageSingle.description(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::Button {
+                                                #[watch]
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::PrevPageSingle)),
+                                                connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::PrevPageSingle)); }
+                                            }
+                                        }
+                                    },
+                                    // NextPageSingle
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: Action::NextPageSingle.description(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::Button {
+                                                #[watch]
+                                                set_label: &format_keyboard_specs(model.input_map.map.get(&Action::NextPageSingle)),
+                                                connect_clicked[sender] => move |_| { sender.input(SettingsDialogMsg::StartCapture(Action::NextPageSingle)); }
+                                            }
+                                        }
+                                    },
+                                },
+
+                                // Mouse Section
+                                gtk4::Label {
+                                    set_label: "Mouse Configuration",
+                                    set_xalign: 0.0,
+                                    add_css_class: "title-4",
+                                    set_margin_top: 10,
+                                },
+
+                                gtk4::ListBox {
+                                    set_selection_mode: gtk4::SelectionMode::None,
+                                    add_css_class: "boxed-list",
+                                    
+                                    // RightClick
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: MouseInputType::RightClick.label(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::ComboBoxText {
+                                                append: (Some("None"), "None"),
+                                                append: (Some("PrevDir"), Action::PrevDir.description()),
+                                                append: (Some("NextDir"), Action::NextDir.description()),
+                                                append: (Some("PrevPage"), Action::PrevPage.description()),
+                                                append: (Some("NextPage"), Action::NextPage.description()),
+                                                append: (Some("ToggleFullscreen"), Action::ToggleFullscreen.description()),
+                                                append: (Some("ZoomIn"), Action::ZoomIn.description()),
+                                                append: (Some("ZoomOut"), Action::ZoomOut.description()),
+                                                append: (Some("ResetZoom"), Action::ResetZoom.description()),
+                                                append: (Some("ToggleSpread"), Action::ToggleSpread.description()),
+                                                append: (Some("ToggleRTL"), Action::ToggleRTL.description()),
+                                                append: (Some("PrevPageSingle"), Action::PrevPageSingle.description()),
+                                                append: (Some("NextPageSingle"), Action::NextPageSingle.description()),
+                                                
+                                                #[watch]
+                                                set_active_id: Some(get_action_id_for_mouse(&model.input_map, MouseInputType::RightClick).unwrap_or("None".to_string()).as_str()),
+                                                
+                                                connect_changed[sender] => move |cb| {
+                                                    if let Some(id) = cb.active_id() {
+                                                        let action = match id.as_str() {
+                                                            "PrevDir" => Some(Action::PrevDir),
+                                                            "NextDir" => Some(Action::NextDir),
+                                                            "PrevPage" => Some(Action::PrevPage),
+                                                            "NextPage" => Some(Action::NextPage),
+                                                            "ToggleFullscreen" => Some(Action::ToggleFullscreen),
+                                                            "ZoomIn" => Some(Action::ZoomIn),
+                                                            "ZoomOut" => Some(Action::ZoomOut),
+                                                            "ResetZoom" => Some(Action::ResetZoom),
+                                                            "ToggleSpread" => Some(Action::ToggleSpread),
+                                                            "ToggleRTL" => Some(Action::ToggleRTL),
+                                                            "PrevPageSingle" => Some(Action::PrevPageSingle),
+                                                            "NextPageSingle" => Some(Action::NextPageSingle),
+                                                            _ => None,
+                                                        };
+                                                        sender.input(SettingsDialogMsg::UpdateMouseBinding(MouseInputType::RightClick, action));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    // MiddleClick
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: MouseInputType::MiddleClick.label(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::ComboBoxText {
+                                                append: (Some("None"), "None"),
+                                                append: (Some("PrevDir"), Action::PrevDir.description()),
+                                                append: (Some("NextDir"), Action::NextDir.description()),
+                                                append: (Some("PrevPage"), Action::PrevPage.description()),
+                                                append: (Some("NextPage"), Action::NextPage.description()),
+                                                append: (Some("ToggleFullscreen"), Action::ToggleFullscreen.description()),
+                                                append: (Some("ZoomIn"), Action::ZoomIn.description()),
+                                                append: (Some("ZoomOut"), Action::ZoomOut.description()),
+                                                append: (Some("ResetZoom"), Action::ResetZoom.description()),
+                                                append: (Some("ToggleSpread"), Action::ToggleSpread.description()),
+                                                append: (Some("ToggleRTL"), Action::ToggleRTL.description()),
+                                                append: (Some("PrevPageSingle"), Action::PrevPageSingle.description()),
+                                                append: (Some("NextPageSingle"), Action::NextPageSingle.description()),
+                                                
+                                                #[watch]
+                                                set_active_id: Some(get_action_id_for_mouse(&model.input_map, MouseInputType::MiddleClick).unwrap_or("None".to_string()).as_str()),
+                                                
+                                                connect_changed[sender] => move |cb| {
+                                                    if let Some(id) = cb.active_id() {
+                                                        let action = match id.as_str() {
+                                                            "PrevDir" => Some(Action::PrevDir),
+                                                            "NextDir" => Some(Action::NextDir),
+                                                            "PrevPage" => Some(Action::PrevPage),
+                                                            "NextPage" => Some(Action::NextPage),
+                                                            "ToggleFullscreen" => Some(Action::ToggleFullscreen),
+                                                            "ZoomIn" => Some(Action::ZoomIn),
+                                                            "ZoomOut" => Some(Action::ZoomOut),
+                                                            "ResetZoom" => Some(Action::ResetZoom),
+                                                            "ToggleSpread" => Some(Action::ToggleSpread),
+                                                            "ToggleRTL" => Some(Action::ToggleRTL),
+                                                            "PrevPageSingle" => Some(Action::PrevPageSingle),
+                                                            "NextPageSingle" => Some(Action::NextPageSingle),
+                                                            _ => None,
+                                                        };
+                                                        sender.input(SettingsDialogMsg::UpdateMouseBinding(MouseInputType::MiddleClick, action));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    // ScrollUp
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: MouseInputType::ScrollUp.label(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::ComboBoxText {
+                                                append: (Some("None"), "None"),
+                                                append: (Some("PrevDir"), Action::PrevDir.description()),
+                                                append: (Some("NextDir"), Action::NextDir.description()),
+                                                append: (Some("PrevPage"), Action::PrevPage.description()),
+                                                append: (Some("NextPage"), Action::NextPage.description()),
+                                                append: (Some("ToggleFullscreen"), Action::ToggleFullscreen.description()),
+                                                append: (Some("ZoomIn"), Action::ZoomIn.description()),
+                                                append: (Some("ZoomOut"), Action::ZoomOut.description()),
+                                                append: (Some("ResetZoom"), Action::ResetZoom.description()),
+                                                append: (Some("ToggleSpread"), Action::ToggleSpread.description()),
+                                                append: (Some("ToggleRTL"), Action::ToggleRTL.description()),
+                                                append: (Some("PrevPageSingle"), Action::PrevPageSingle.description()),
+                                                append: (Some("NextPageSingle"), Action::NextPageSingle.description()),
+                                                
+                                                #[watch]
+                                                set_active_id: Some(get_action_id_for_mouse(&model.input_map, MouseInputType::ScrollUp).unwrap_or("None".to_string()).as_str()),
+                                                
+                                                connect_changed[sender] => move |cb| {
+                                                    if let Some(id) = cb.active_id() {
+                                                        let action = match id.as_str() {
+                                                            "PrevDir" => Some(Action::PrevDir),
+                                                            "NextDir" => Some(Action::NextDir),
+                                                            "PrevPage" => Some(Action::PrevPage),
+                                                            "NextPage" => Some(Action::NextPage),
+                                                            "ToggleFullscreen" => Some(Action::ToggleFullscreen),
+                                                            "ZoomIn" => Some(Action::ZoomIn),
+                                                            "ZoomOut" => Some(Action::ZoomOut),
+                                                            "ResetZoom" => Some(Action::ResetZoom),
+                                                            "ToggleSpread" => Some(Action::ToggleSpread),
+                                                            "ToggleRTL" => Some(Action::ToggleRTL),
+                                                            "PrevPageSingle" => Some(Action::PrevPageSingle),
+                                                            "NextPageSingle" => Some(Action::NextPageSingle),
+                                                            _ => None,
+                                                        };
+                                                        sender.input(SettingsDialogMsg::UpdateMouseBinding(MouseInputType::ScrollUp, action));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    // ScrollDown
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: MouseInputType::ScrollDown.label(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::ComboBoxText {
+                                                append: (Some("None"), "None"),
+                                                append: (Some("PrevDir"), Action::PrevDir.description()),
+                                                append: (Some("NextDir"), Action::NextDir.description()),
+                                                append: (Some("PrevPage"), Action::PrevPage.description()),
+                                                append: (Some("NextPage"), Action::NextPage.description()),
+                                                append: (Some("ToggleFullscreen"), Action::ToggleFullscreen.description()),
+                                                append: (Some("ZoomIn"), Action::ZoomIn.description()),
+                                                append: (Some("ZoomOut"), Action::ZoomOut.description()),
+                                                append: (Some("ResetZoom"), Action::ResetZoom.description()),
+                                                append: (Some("ToggleSpread"), Action::ToggleSpread.description()),
+                                                append: (Some("ToggleRTL"), Action::ToggleRTL.description()),
+                                                append: (Some("PrevPageSingle"), Action::PrevPageSingle.description()),
+                                                append: (Some("NextPageSingle"), Action::NextPageSingle.description()),
+                                                
+                                                #[watch]
+                                                set_active_id: Some(get_action_id_for_mouse(&model.input_map, MouseInputType::ScrollDown).unwrap_or("None".to_string()).as_str()),
+                                                
+                                                connect_changed[sender] => move |cb| {
+                                                    if let Some(id) = cb.active_id() {
+                                                        let action = match id.as_str() {
+                                                            "PrevDir" => Some(Action::PrevDir),
+                                                            "NextDir" => Some(Action::NextDir),
+                                                            "PrevPage" => Some(Action::PrevPage),
+                                                            "NextPage" => Some(Action::NextPage),
+                                                            "ToggleFullscreen" => Some(Action::ToggleFullscreen),
+                                                            "ZoomIn" => Some(Action::ZoomIn),
+                                                            "ZoomOut" => Some(Action::ZoomOut),
+                                                            "ResetZoom" => Some(Action::ResetZoom),
+                                                            "ToggleSpread" => Some(Action::ToggleSpread),
+                                                            "ToggleRTL" => Some(Action::ToggleRTL),
+                                                            "PrevPageSingle" => Some(Action::PrevPageSingle),
+                                                            "NextPageSingle" => Some(Action::NextPageSingle),
+                                                            _ => None,
+                                                        };
+                                                        sender.input(SettingsDialogMsg::UpdateMouseBinding(MouseInputType::ScrollDown, action));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    // LeftDouble
+                                    gtk4::ListBoxRow {
+                                        gtk4::Box {
+                                            set_orientation: gtk4::Orientation::Horizontal,
+                                            set_spacing: 10,
+                                            set_margin_all: 5,
+                                            gtk4::Label {
+                                                set_label: MouseInputType::LeftDouble.label(),
+                                                set_hexpand: true,
+                                                set_xalign: 0.0,
+                                            },
+                                            gtk4::ComboBoxText {
+                                                append: (Some("None"), "None"),
+                                                append: (Some("PrevDir"), Action::PrevDir.description()),
+                                                append: (Some("NextDir"), Action::NextDir.description()),
+                                                append: (Some("PrevPage"), Action::PrevPage.description()),
+                                                append: (Some("NextPage"), Action::NextPage.description()),
+                                                append: (Some("ToggleFullscreen"), Action::ToggleFullscreen.description()),
+                                                append: (Some("ZoomIn"), Action::ZoomIn.description()),
+                                                append: (Some("ZoomOut"), Action::ZoomOut.description()),
+                                                append: (Some("ResetZoom"), Action::ResetZoom.description()),
+                                                append: (Some("ToggleSpread"), Action::ToggleSpread.description()),
+                                                append: (Some("ToggleRTL"), Action::ToggleRTL.description()),
+                                                append: (Some("PrevPageSingle"), Action::PrevPageSingle.description()),
+                                                append: (Some("NextPageSingle"), Action::NextPageSingle.description()),
+                                                
+                                                #[watch]
+                                                set_active_id: Some(get_action_id_for_mouse(&model.input_map, MouseInputType::LeftDouble).unwrap_or("None".to_string()).as_str()),
+                                                
+                                                connect_changed[sender] => move |cb| {
+                                                    if let Some(id) = cb.active_id() {
+                                                        let action = match id.as_str() {
+                                                            "PrevDir" => Some(Action::PrevDir),
+                                                            "NextDir" => Some(Action::NextDir),
+                                                            "PrevPage" => Some(Action::PrevPage),
+                                                            "NextPage" => Some(Action::NextPage),
+                                                            "ToggleFullscreen" => Some(Action::ToggleFullscreen),
+                                                            "ZoomIn" => Some(Action::ZoomIn),
+                                                            "ZoomOut" => Some(Action::ZoomOut),
+                                                            "ResetZoom" => Some(Action::ResetZoom),
+                                                            "ToggleSpread" => Some(Action::ToggleSpread),
+                                                            "ToggleRTL" => Some(Action::ToggleRTL),
+                                                            "PrevPageSingle" => Some(Action::PrevPageSingle),
+                                                            "NextPageSingle" => Some(Action::NextPageSingle),
+                                                            _ => None,
+                                                        };
+                                                        sender.input(SettingsDialogMsg::UpdateMouseBinding(MouseInputType::LeftDouble, action));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
                             }
                         },
+                    },
                         
                         // Footer
                         gtk4::Box {
@@ -527,7 +850,7 @@ impl SimpleComponent for SettingsDialogModel {
         
         // Add overlay child for capturing manually
         let capture_label = gtk4::Label::builder()
-            .label("Press a key or mouse button... (Esc to cancel)")
+            .label("Press a key (Esc to cancel)")
             .css_classes(["title-1", "dim-label"])
             .halign(gtk4::Align::Center)
             .valign(gtk4::Align::Center)
@@ -666,23 +989,52 @@ impl SimpleComponent for SettingsDialogModel {
             }
             SettingsDialogMsg::CaptureInput(spec) => {
                 if let Some(action) = self.capturing_action {
-                    // Update Input Map
-                    // Replace existing, or add? Usually replace single entry for simplicity in this UI
-                    // or append? Let's just create a single-item vector for now, effectively replacing.
-                    // If we want multiple support, we'd need a more complex UI.
-                    // For now, assume replacement.
-                    
-                    // Also check if key matches "Escape", cancel capture.
-                    if let InputSpec::Keyboard { keyval, .. } = spec {
+                    // Check cancellation
+                     if let InputSpec::Keyboard { keyval, .. } = spec {
                         if keyval == gtk4::gdk::Key::Escape.into_glib() {
                              self.capturing_action = None;
                              return;
                         }
                     }
                     
-                    self.input_map.map.insert(action, vec![spec]);
+                    // We only accept Keyboard input for "CaptureInput" now
+                    if matches!(spec, InputSpec::Keyboard { .. }) {
+                        // preserve existing mouse bindings for this action?
+                        // Actually, we want to allow multiple Keyboard bindings?
+                        // Or just replace all for this action?
+                        // The UI implies 1-to-1 or just "Set".
+                        // To be safe and simple: 
+                        // 1. Get existing specs for this action.
+                        // 2. Filter out Keyboard specs.
+                        // 3. Add new Keyboard spec.
+                        // This prevents clearing mouse bindings when setting keyboard.
+                        
+                        let mut new_specs = Vec::new();
+                        if let Some(existing) = self.input_map.map.get(&action) {
+                            for s in existing {
+                                if !matches!(s, InputSpec::Keyboard { .. }) {
+                                    new_specs.push(s.clone());
+                                }
+                            }
+                        }
+                        new_specs.push(spec);
+                        self.input_map.map.insert(action, new_specs);
+                    }
                     self.capturing_action = None;
                 }
+            }
+            SettingsDialogMsg::UpdateMouseBinding(input_type, action_opt) => {
+                // Remove this mouse input from ALL actions
+                 for (_, specs) in self.input_map.map.iter_mut() {
+                     specs.retain(|s| !matches_mouse_input(s, input_type));
+                 }
+                 
+                 // If action is selected, add it
+                 if let Some(action) = action_opt {
+                     let mut specs = self.input_map.map.entry(action).or_insert(Vec::new()).clone();
+                     specs.push(input_type.to_input_spec());
+                     self.input_map.map.insert(action, specs);
+                 }
             }
             SettingsDialogMsg::ResetInputs => {
                 self.input_map = InputMap::default();
@@ -691,9 +1043,14 @@ impl SimpleComponent for SettingsDialogModel {
     }
 }
 
-fn format_specs(specs: Option<&Vec<InputSpec>>) -> String {
+fn format_keyboard_specs(specs: Option<&Vec<InputSpec>>) -> String {
     if let Some(specs) = specs {
-        specs.iter().map(|s| format_spec(s)).collect::<Vec<_>>().join(", ")
+        let s = specs.iter()
+            .filter(|s| matches!(s, InputSpec::Keyboard { .. }))
+            .map(|s| format_spec(s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if s.is_empty() { "None".to_string() } else { s }
     } else {
         "None".to_string()
     }
@@ -712,34 +1069,32 @@ fn format_spec(spec: &InputSpec) -> String {
             s.push_str(&key_name);
             s
         }
-        InputSpec::Mouse { button, modifiers, double_click } => {
-            let btn_name = match *button {
-                 1 => "Left Click",
-                 2 => "Middle Click",
-                 3 => "Right Click",
-                 _ => "Mouse Btn",
-            };
-            let mods = gdk::ModifierType::from_bits_truncate(*modifiers);
-            let mut s = String::new();
-             if mods.contains(gdk::ModifierType::SHIFT_MASK) { s.push_str("Shift+"); }
-             if mods.contains(gdk::ModifierType::CONTROL_MASK) { s.push_str("Ctrl+"); }
-            s.push_str(btn_name);
-            if *double_click { s.push_str(" (Double)"); }
-            s
-        }
-        InputSpec::Scroll { direction, modifiers } => {
-             let dir_name = match direction {
-                 crate::input_settings::ScrollDirection::Up => "Scroll Up",
-                 crate::input_settings::ScrollDirection::Down => "Scroll Down",
-                 crate::input_settings::ScrollDirection::Left => "Scroll Left",
-                 crate::input_settings::ScrollDirection::Right => "Scroll Right",
-             };
-              let mods = gdk::ModifierType::from_bits_truncate(*modifiers);
-             let mut s = String::new();
-              if mods.contains(gdk::ModifierType::SHIFT_MASK) { s.push_str("Shift+"); }
-              if mods.contains(gdk::ModifierType::CONTROL_MASK) { s.push_str("Ctrl+"); }
-              s.push_str(dir_name);
-              s
+        _ => "".to_string(), // Should not be called for mouse/scroll in this UI context
+    }
+}
+
+fn matches_mouse_input(spec: &InputSpec, input_type: MouseInputType) -> bool {
+    let target = input_type.to_input_spec();
+    match (spec, target) {
+        (InputSpec::Mouse { button: b1, modifiers: m1, double_click: d1 }, 
+         InputSpec::Mouse { button: b2, modifiers: m2, double_click: d2 }) => {
+             *b1 == b2 && *m1 == m2 && *d1 == d2
+         },
+        (InputSpec::Scroll { direction: d1, modifiers: m1 },
+         InputSpec::Scroll { direction: d2, modifiers: m2 }) => {
+             *d1 == d2 && *m1 == m2
+         },
+        _ => false
+    }
+}
+
+fn get_action_id_for_mouse(input_map: &InputMap, input_type: MouseInputType) -> Option<String> {
+    for (action, specs) in &input_map.map {
+        for spec in specs {
+            if matches_mouse_input(spec, input_type) {
+                return Some(format!("{:?}", action));
+            }
         }
     }
+    None
 }
