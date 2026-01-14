@@ -335,8 +335,6 @@ impl SimpleComponent for SettingsDialogModel {
                                 mouse_list -> gtk4::ListBox,
                             }
                         },
-                    },
-                        
                         // Footer
                         gtk4::Box {
                             set_orientation: gtk4::Orientation::Horizontal,
@@ -356,6 +354,7 @@ impl SimpleComponent for SettingsDialogModel {
                             }
                         }
                     }
+                    }
                 }
             }
         }
@@ -369,6 +368,8 @@ impl SimpleComponent for SettingsDialogModel {
             .launch(gtk4::ListBox::builder()
                 .selection_mode(gtk4::SelectionMode::None)
                 .css_classes(["boxed-list"])
+                .vexpand(true)
+                .hexpand(true)
                 .build())
             .forward(sender.input_sender(), |msg| msg);
             
@@ -376,6 +377,8 @@ impl SimpleComponent for SettingsDialogModel {
             .launch(gtk4::ListBox::builder()
                 .selection_mode(gtk4::SelectionMode::None)
                 .css_classes(["boxed-list"])
+                .vexpand(true)
+                .hexpand(true)
                 .build())
             .forward(sender.input_sender(), |msg| msg);
 

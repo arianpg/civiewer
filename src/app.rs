@@ -68,6 +68,7 @@ pub enum AppMsg {
     CheckCursorHide,
     TriggerAction(Action),
     KeyInput(gtk4::gdk::Key, gtk4::gdk::ModifierType),
+    NoOp,
 }
 
 #[relm4::component(pub)]
@@ -168,7 +169,7 @@ impl SimpleComponent for AppModel {
             .launch(())
             .forward(sender.input_sender(), |output| match output {
                 SettingsDialogOutput::SaveSettings(settings) => AppMsg::SaveSettings(settings),
-                SettingsDialogOutput::Close => { AppMsg::ResetZoom /* Dummy */ },
+                SettingsDialogOutput::Close => { AppMsg::NoOp },
             });
 
         // Menu Model
@@ -607,6 +608,7 @@ impl SimpleComponent for AppModel {
             AppMsg::KeyInput(_, _) => {
                  // Deprecated / Handled by controller directly now
             }
+            AppMsg::NoOp => {}
         }
     }
 }
