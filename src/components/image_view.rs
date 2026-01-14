@@ -5,6 +5,14 @@ use crate::database::SortType;
 use crate::input_settings::{InputMap, Action, ScrollDirection};
 
 #[derive(Debug)]
+pub enum LoadedImageSource {
+    TextureBytes(Vec<u8>),
+    AnimPath(PathBuf),
+    AnimTemp(tempfile::NamedTempFile),
+    Error,
+}
+
+#[derive(Debug)]
 pub struct ImageViewModel {
     current_paths: Vec<PathBuf>,
     textures: Vec<gtk4::gdk::Paintable>,
@@ -35,6 +43,7 @@ pub enum ImageViewMsg {
     TriggerAction(Action),
     MouseInput { button: u32, modifiers: u32, n_press: i32 },
     ScrollInput { dy: f64, modifiers: u32 },
+    ImageLoaded { index: usize, source: LoadedImageSource, path: PathBuf },
 }
 
 #[derive(Debug)]
@@ -363,112 +372,162 @@ impl SimpleComponent for ImageViewModel {
 
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
-             ImageViewMsg::ShowPages(paths) => {
+              ImageViewMsg::ShowPages(paths) => {
                   self.current_paths = paths.clone();
                   self.is_fit_to_window = true;
                   self.textures.clear();
-                  let old_files = std::mem::take(&mut self.temp_files);
-                  std::thread::spawn(move || { drop(old_files); });
+                  self.temp_files.clear(); // Clear old temp files immediately
                   
-                  for path in &paths {
-                      let mut found = false;
-                      if path.exists() {
-                          let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
-                              let ext = ext.to_lowercase();
-                              if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
-                              if ext == "png" { return crate::utils::is_apng(path); }
-                              false
-                          });
+                  // Create placeholders (optional, but good for keeping order if we did parallel, currently sequential)
+                  // For now, we will push as we receive. 
+                  // actually, if we want to support "loading" state, we could push nothing yet.
+                  // But since the thread loops and sends sequentially, we can just clear and wait.
+                  
+                  let sender_clone = _sender.clone();
+                  let paths_clone = paths.clone();
 
-                          if is_anim {
-                              let file = gtk4::gio::File::for_path(path);
-                              let media = gtk4::MediaFile::for_file(&file);
-                               media.set_loop(true);
-                               media.play();
-                               
-                               let sender_clone = _sender.clone();
-                               let index = self.textures.len();
-                               let path_clone = path.clone();
-                               media.connect_notify(Some("error"), move |_, _| {
-                                   sender_clone.input(ImageViewMsg::LoadFallback(index, path_clone.clone(), None));
+                  std::thread::spawn(move || {
+                      for (index, path) in paths_clone.iter().enumerate() {
+                           let mut found_source = LoadedImageSource::Error;
+                           
+                           if path.exists() {
+                               let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
+                                   let ext = ext.to_lowercase();
+                                   if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
+                                   if ext == "png" { return crate::utils::is_apng(path); }
+                                   false
                                });
 
-                              self.textures.push(media.upcast());
-                              found = true;
-                          } else if let Ok(texture) = gtk4::gdk::Texture::from_file(&gtk4::gio::File::for_path(path)) {
+                               if is_anim {
+                                    // Just pass path for animation
+                                    found_source = LoadedImageSource::AnimPath(path.clone());
+                               } else {
+                                   // Load bytes for normal image to offload I/O
+                                   if let Ok(bytes) = std::fs::read(path) {
+                                       found_source = LoadedImageSource::TextureBytes(bytes);
+                                   }
+                               }
+                           }
+
+                           if matches!(found_source, LoadedImageSource::Error) {
+                                // Zip logic
+                               let mut current = path.clone();
+                               // Re-implement ZIP logic ...
+                               // Simplified for brevity: we need to traverse up to find zip
+                               let mut zip_found = false;
+                               // We need to keep checking parents until we find a zip or hit root
+                               // To avoid infinite loops or complexity, let's copy the logic carefully
+                               
+                               let mut check_path = path.clone();
+                               while let Some(parent) = check_path.parent() {
+                                    if parent.is_file() {
+                                        if let Some(ext) = parent.extension().and_then(|s| s.to_str()) {
+                                            if ext.to_lowercase() == "zip" {
+                                                if let Ok(suffix) = path.strip_prefix(parent) {
+                                                    let entry_name = suffix.to_string_lossy();
+                                                    if let Ok(file) = std::fs::File::open(parent) {
+                                                        if let Ok(mut archive) = zip::ZipArchive::new(file) {
+                                                            if let Ok(mut entry) = archive.by_name(&entry_name) {
+                                                                use std::io::Read;
+                                                                let mut buffer = Vec::new();
+                                                                if entry.read_to_end(&mut buffer).is_ok() {
+                                                                    let bytes_vec = buffer.clone(); // keep for check
+                                                                    let glib_bytes = gtk4::glib::Bytes::from(&buffer); // needed for is_apng_bytes? No, is_apng_bytes takes &[u8] usually? 
+                                                                    // Wait, is_apng_bytes might need gtk::glib::Bytes if it was designed for it.
+                                                                    // Let's check utils later. Assuming it takes &[u8]. 
+                                                                    // Actually line 423 in original used `gtk4::glib::Bytes::from(&buffer)`.
+                                                                    
+                                                                    let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
+                                                                        let ext = ext.to_lowercase();
+                                                                        if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
+                                                                         // Reuse the logic, but we need `is_apng_bytes`.
+                                                                         // Assuming crate::utils::is_apng_bytes(&glib_bytes) works or similar
+                                                                        if ext == "png" { return crate::utils::is_apng_bytes(&glib_bytes); }
+                                                                        false
+                                                                    });
+
+                                                                    if is_anim {
+                                                                        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("tmp");
+                                                                        if let Ok(mut temp_file) = tempfile::Builder::new().suffix(&format!(".{}", ext)).tempfile() {
+                                                                            use std::io::Write;
+                                                                            if temp_file.write_all(&buffer).is_ok() {
+                                                                                found_source = LoadedImageSource::AnimTemp(temp_file);
+                                                                            }
+                                                                        }
+                                                                    } else {
+                                                                        found_source = LoadedImageSource::TextureBytes(buffer);
+                                                                    }
+                                                                    zip_found = true;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if zip_found { break; }
+                                    check_path = parent.to_path_buf();
+                               }
+                           }
+                           
+                           sender_clone.input(ImageViewMsg::ImageLoaded { index, source: found_source, path: path.clone() });
+                      }
+                  });
+              }
+              ImageViewMsg::ImageLoaded { index: _, source, path } => {
+                  match source {
+                      LoadedImageSource::TextureBytes(bytes) => {
+                          let glib_bytes = gtk4::glib::Bytes::from(&bytes);
+                          if let Ok(texture) = gtk4::gdk::Texture::from_bytes(&glib_bytes) {
                               self.textures.push(texture.upcast());
-                              found = true;
                           }
                       }
-                      
-                      if !found {
-                           // Zip logic
-                          let mut current = path.clone();
-                          while let Some(parent) = current.parent() {
-                              if parent.is_file() {
-                                  if let Some(ext) = parent.extension().and_then(|s| s.to_str()) {
-                                      if ext.to_lowercase() == "zip" {
-                                          if let Ok(suffix) = path.strip_prefix(parent) {
-                                              let entry_name = suffix.to_string_lossy();
-                                              if let Ok(file) = std::fs::File::open(parent) {
-                                                  if let Ok(mut archive) = zip::ZipArchive::new(file) {
-                                                      if let Ok(mut entry) = archive.by_name(&entry_name) {
-                                                          use std::io::Read;
-                                                          let mut buffer = Vec::new();
-                                                          if entry.read_to_end(&mut buffer).is_ok() {
-                                                              let bytes = gtk4::glib::Bytes::from(&buffer);
-                                                              let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
-                                                                  let ext = ext.to_lowercase();
-                                                                  if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
-                                                                  if ext == "png" { return crate::utils::is_apng_bytes(&bytes); }
-                                                                  false
-                                                              });
-
-                                                              if is_anim {
-                                                                  let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("tmp");
-                                                                  if let Ok(mut temp_file) = tempfile::Builder::new().suffix(&format!(".{}", ext)).tempfile() {
-                                                                      use std::io::Write;
-                                                                      if temp_file.write_all(&bytes).is_ok() {
-                                                                          let temp_path = temp_file.path().to_path_buf();
-                                                                          let media = gtk4::MediaFile::for_filename(temp_path.to_str().unwrap_or(""));
-                                                                          media.set_loop(true);
-                                                                          media.play();
-                                                                          
-                                                                          let sender_clone = _sender.clone();
-                                                                          let index = self.textures.len();
-                                                                          let path_clone = path.clone();
-                                                                          let temp_path_clone = temp_path.clone(); 
-                                                                          media.connect_notify(Some("error"), move |_, _| {
-                                                                              sender_clone.input(ImageViewMsg::LoadFallback(index, path_clone.clone(), Some(temp_path_clone.clone())));
-                                                                          });
-
-                                                                          self.textures.push(media.upcast());
-                                                                          self.temp_files.push(temp_file);
-                                                                          found = true;
-                                                                      }
-                                                                  }
-                                                              } else if let Ok(texture) = gtk4::gdk::Texture::from_bytes(&bytes) {
-                                                                 self.textures.push(texture.upcast());
-                                                                 found = true;
-                                                              }
-                                                          }
-                                                      }
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                                  if found { break; }
-                              }
-                              current = parent.to_path_buf();
-                          }
+                      LoadedImageSource::AnimPath(p) => {
+                           let file = gtk4::gio::File::for_path(&p);
+                           let media = gtk4::MediaFile::for_file(&file);
+                           media.set_loop(true);
+                           media.play();
+                           // Connect error logic?
+                           // Simplified for stability now, can add back later if needed
+                           // But error handling needs the index. 
+                           // `self.textures.len()` corresponds to current insertion since we are sequential.
+                           let sender_clone = _sender.clone();
+                           let idx = self.textures.len();
+                           let p_clone = p.clone();
+                           media.connect_notify(Some("error"), move |_, _| {
+                               sender_clone.input(ImageViewMsg::LoadFallback(idx, p_clone.clone(), None));
+                           });
+                           self.textures.push(media.upcast());
                       }
-                      
-                      if !found && path.exists() {
-                          // Try loading as simple texture again if no other special handling
-                          // (This is a fallback if is_anim check failed but it is an image)
-                           if let Ok(texture) = gtk4::gdk::Texture::from_file(&gtk4::gio::File::for_path(path)) {
-                              self.textures.push(texture.upcast());
+                      LoadedImageSource::AnimTemp(temp_file) => {
+                           let temp_path = temp_file.path().to_path_buf();
+                           let media = gtk4::MediaFile::for_filename(temp_path.to_str().unwrap_or(""));
+                           media.set_loop(true);
+                           media.play();
+                           
+                           let sender_clone = _sender.clone();
+                           let idx = self.textures.len();
+                           let p_clone = path.clone();
+                           let temp_path_clone = temp_path.clone();
+                           media.connect_notify(Some("error"), move |_, _| {
+                               sender_clone.input(ImageViewMsg::LoadFallback(idx, p_clone.clone(), Some(temp_path_clone.clone())));
+                           });
+                           
+                           self.textures.push(media.upcast());
+                           self.temp_files.push(temp_file);
+                      }
+                      LoadedImageSource::Error => {
+                          // Try one last fallback if it exists as a file but failed logic?
+                          // Or just ignore.
+                          // If we wanted to keep indices aligned, we should push a placeholder or something.
+                          // But typically we just skip broken images in `ImageView`.
+                          // However, `ShowPages` clears logic.
+                          if path.exists() {
+                                // Fallback for simple images that might have failed above checks
+                                if let Ok(texture) = gtk4::gdk::Texture::from_file(&gtk4::gio::File::for_path(&path)) {
+                                    self.textures.push(texture.upcast());
+                                }
                           }
                       }
                   }

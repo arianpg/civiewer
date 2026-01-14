@@ -11,7 +11,7 @@ use crate::components::image_view::{ImageViewModel, ImageViewMsg, ImageViewOutpu
 use crate::components::settings_dialog::{SettingsDialogModel, SettingsDialogMsg, SettingsDialogOutput};
 
 use crate::database::{AppSettings, AppState, DbHelper, SortType, DirectorySettings};
-use crate::input_settings::Action;
+use crate::input_settings::{InputMap, Action};
 
 pub struct AppModel {
     sidebar: Controller<SidebarModel>,
@@ -31,7 +31,8 @@ pub struct AppModel {
     
     is_fullscreen: bool,
     cursor_timeout: Option<gtk4::glib::SourceId>,
-    timer_gen: u32,
+    last_cursor_motion: std::time::Instant,
+    shared_input_map: std::rc::Rc<std::cell::RefCell<InputMap>>,
 }
 
 
@@ -64,7 +65,7 @@ pub enum AppMsg {
     PrevDir,
     ClearImage,
     CursorMotion,
-    HideCursor(u32),
+    CheckCursorHide,
     TriggerAction(Action),
     KeyInput(gtk4::gdk::Key, gtk4::gdk::ModifierType),
 }
@@ -247,6 +248,9 @@ impl SimpleComponent for AppModel {
         let current_dir_sort = settings.default_dir_sort;
         let current_image_sort = settings.default_image_sort;
 
+        // Shared InputMap for controller
+        let shared_input_map = std::rc::Rc::new(std::cell::RefCell::new(settings.input_map.clone()));
+
         let model = AppModel {
             sidebar,
             image_view,
@@ -262,7 +266,8 @@ impl SimpleComponent for AppModel {
             last_path: app_state.last_path.clone(),
             is_fullscreen: false,
             cursor_timeout: None,
-            timer_gen: 0,
+            last_cursor_motion: std::time::Instant::now(),
+            shared_input_map: shared_input_map.clone(),
         };
         
         // Handle startup target
@@ -299,11 +304,16 @@ impl SimpleComponent for AppModel {
         
         // Key Controller
         let key_controller = gtk4::EventControllerKey::new();
+        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let sender_key = sender.clone();
+        let map_clone = shared_input_map.clone();
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
-            // Forward all key presses to AppModel update loop to check against InputMap
-            sender_key.input(AppMsg::KeyInput(key, modifiers));
-            gtk4::glib::Propagation::Stop
+            // Check InputMap first
+            if let Some(action) = map_clone.borrow().get_action_for_key(key, modifiers) {
+                 sender_key.input(AppMsg::TriggerAction(action));
+                 return gtk4::glib::Propagation::Stop;
+            }
+            gtk4::glib::Propagation::Proceed
         });
         widgets.main_window.add_controller(key_controller);
 
@@ -497,8 +507,11 @@ impl SimpleComponent for AppModel {
                          eprintln!("Failed to save settings: {}", e);
                     }
                 }
-                
-                // Apply update loops, dark mode, single first page
+                 
+                 // Update shared map
+                 self.shared_input_map.replace(self.settings.input_map.clone());
+
+                 // Apply update loops, dark mode, single first page
                 self.sidebar.emit(SidebarMsg::UpdateLoopImages(self.settings.loop_images));
                 self.sidebar.emit(SidebarMsg::UpdateSingleFirstPage(self.settings.single_first_page));
                 if let Some(gtk_settings) = gtk4::Settings::default() {
@@ -520,7 +533,6 @@ impl SimpleComponent for AppModel {
                      if let Some(source_id) = self.cursor_timeout.take() {
                          source_id.remove();
                      }
-                     self.timer_gen += 1; // Invalidate old timers
 
                      if win.is_fullscreen() {
                          win.unfullscreen();
@@ -531,14 +543,14 @@ impl SimpleComponent for AppModel {
                      } else {
                          win.fullscreen();
                          self.is_fullscreen = true;
+                         self.last_cursor_motion = std::time::Instant::now();
                          
-                         // Start timer
+                         // Start polling timer (repeating)
                          let sender = _sender.clone();
-                         let current_gen = self.timer_gen;
                          self.cursor_timeout = Some(gtk4::glib::timeout_add_local(
-                             std::time::Duration::from_secs(3),
+                             std::time::Duration::from_millis(500),
                              move || {
-                                 sender.input(AppMsg::HideCursor(current_gen));
+                                 sender.input(AppMsg::CheckCursorHide);
                                  gtk4::glib::ControlFlow::Continue
                              }
                          ));
@@ -560,40 +572,19 @@ impl SimpleComponent for AppModel {
             // Cursor Logic
             //
             AppMsg::CursorMotion => {
-                // Show cursor
+                // Just update timestamp and show cursor
+                self.last_cursor_motion = std::time::Instant::now();
                 if let Some(window) = &self.sidebar.widget().root().and_then(|r| r.downcast::<gtk4::Window>().ok()) {
                      window.set_cursor(None::<&gtk4::gdk::Cursor>);
-                     
-                     // Cancel pending timer
-                     if let Some(source_id) = self.cursor_timeout.take() {
-                         source_id.remove();
-                     }
-                     self.timer_gen += 1; // Invalidate old timers
-
-                     // Start new timer if fullscreen
-                     if self.is_fullscreen {
-                         let sender = _sender.clone();
-                         let current_gen = self.timer_gen;
-                         self.cursor_timeout = Some(gtk4::glib::timeout_add_local(
-                             std::time::Duration::from_secs(3),
-                             move || {
-                                 sender.input(AppMsg::HideCursor(current_gen));
-                                 gtk4::glib::ControlFlow::Continue
-                             }
-                         ));
-                     }
                 }
             }
-            AppMsg::HideCursor(msg_gen) => {
-                // Only hide if generation matches (prevent race conditions)
-                if msg_gen == self.timer_gen && self.is_fullscreen {
-                    if let Some(window) = &self.sidebar.widget().root().and_then(|r| r.downcast::<gtk4::Window>().ok()) {
-                        let cursor = gtk4::gdk::Cursor::from_name("none", None);
-                        window.set_cursor(cursor.as_ref());
-                    }
-                    // Stop the timer now that we've acted on it
-                    if let Some(source_id) = self.cursor_timeout.take() {
-                        source_id.remove();
+            AppMsg::CheckCursorHide => {
+                if self.is_fullscreen {
+                    if self.last_cursor_motion.elapsed() > std::time::Duration::from_secs(3) {
+                        if let Some(window) = &self.sidebar.widget().root().and_then(|r| r.downcast::<gtk4::Window>().ok()) {
+                            let cursor = gtk4::gdk::Cursor::from_name("none", None);
+                            window.set_cursor(cursor.as_ref());
+                        }
                     }
                 }
             }
@@ -728,10 +719,8 @@ impl SimpleComponent for AppModel {
                     Action::NextPageSingle => _sender.input(AppMsg::NextPageSingle),
                 }
             }
-            AppMsg::KeyInput(key, modifiers) => {
-                 if let Some(action) = self.settings.input_map.get_action_for_key(key, modifiers) {
-                     _sender.input(AppMsg::TriggerAction(action));
-                 }
+            AppMsg::KeyInput(_, _) => {
+                 // Deprecated / Handled by controller directly now
             }
         }
     }
