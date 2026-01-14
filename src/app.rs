@@ -376,68 +376,10 @@ impl SimpleComponent for AppModel {
                  _sender.input(AppMsg::RTLChanged(!self.right_to_left));
             }
             AppMsg::SpreadModeChanged(val) => {
-                self.spread_view = val;
-                
-                // Save directory settings
-                if let Some(helper) = &self.db_helper {
-                     if let Some(path) = &self.last_path {
-                         let ds = DirectorySettings {
-                             path: path.clone(),
-                             spread_view: self.spread_view,
-                             right_to_left: self.right_to_left,
-                             dir_sort: self.current_dir_sort,
-                             image_sort: self.current_image_sort,
-                          };
-                          let _ = helper.save_directory_settings(&ds);
-                    }
-                }
-                
-                self.image_view.emit(ImageViewMsg::UpdateSettings { 
-                    spread_mode: self.spread_view, 
-                    right_to_left: self.right_to_left,
-                    dir_sort: self.current_dir_sort,
-                    image_sort: self.current_image_sort,
-                    input_map: self.settings.input_map.clone(),
-                });
-                self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
-                
-                 if let Some(path) = &self.current_image {
-                    if self.spread_view {
-                        self.sidebar.emit(SidebarMsg::GetSpreadPages(path.clone()));
-                    } else {
-                        self.image_view.emit(ImageViewMsg::ShowPages(vec![path.clone()]));
-                    }
-                }
+                self.handle_spread_mode_changed(val);
             }
             AppMsg::RTLChanged(val) => {
-                self.right_to_left = val;
-                if let Some(helper) = &self.db_helper {
-                     if let Some(path_str) = &self.last_path {
-                          let ds = DirectorySettings {
-                             path: path_str.clone(),
-                             spread_view: self.spread_view,
-                             right_to_left: self.right_to_left,
-                             dir_sort: self.current_dir_sort,
-                             image_sort: self.current_image_sort,
-                          };
-                          let _ = helper.save_directory_settings(&ds);
-                     }
-                }
-                self.image_view.emit(ImageViewMsg::UpdateSettings { 
-                    spread_mode: self.spread_view, 
-                    right_to_left: self.right_to_left,
-                     dir_sort: self.current_dir_sort,
-                     image_sort: self.current_image_sort,
-                     input_map: self.settings.input_map.clone(),
-                });
-                
-                if let Some(path) = &self.current_image {
-                    if self.spread_view {
-                        self.sidebar.emit(SidebarMsg::GetSpreadPages(path.clone()));
-                    } else {
-                        self.image_view.emit(ImageViewMsg::ShowPages(vec![path.clone()]));
-                    }
-                }
+                self.handle_rtl_changed(val);
             }
             AppMsg::ZoomIn => self.image_view.emit(ImageViewMsg::ZoomIn),
             AppMsg::ZoomOut => self.image_view.emit(ImageViewMsg::ZoomOut),
@@ -589,64 +531,7 @@ impl SimpleComponent for AppModel {
                 }
             }
             AppMsg::PathChanged(path_str) => {
-                self.last_path = Some(path_str.clone());
-                
-                if let Some(helper) = &self.db_helper {
-                    // Save AppState
-                    let state = AppState { key: "global".to_string(), last_path: Some(path_str.clone()) };
-                    let _ = helper.save_app_state(&state);
-                    
-                    // Defaults
-                    self.spread_view = self.settings.default_spread_view;
-                    self.right_to_left = self.settings.default_right_to_left;
-                    self.current_dir_sort = self.settings.default_dir_sort;
-                    self.current_image_sort = self.settings.default_image_sort;
-
-                    let is_archive = path_str.to_lowercase().ends_with(".zip");
-
-                    // Load Image Settings (from Archive or Dir)
-                    if let Ok(Some(dir_settings)) = helper.get_directory_settings(&path_str) {
-                         self.spread_view = dir_settings.spread_view;
-                         self.right_to_left = dir_settings.right_to_left;
-                         self.current_image_sort = dir_settings.image_sort;
-                         if !is_archive {
-                             self.current_dir_sort = dir_settings.dir_sort;
-                         }
-                    }
-
-                    // Load Directory Sort (from Parent if Archive)
-                    if is_archive {
-                        let path = std::path::Path::new(&path_str);
-                        if let Some(parent) = path.parent() {
-                            let parent_str = parent.to_string_lossy().to_string();
-                            if let Ok(Some(parent_settings)) = helper.get_directory_settings(&parent_str) {
-                                self.current_dir_sort = parent_settings.dir_sort;
-                            }
-                        }
-                    }
-                     
-                     // Update UI
-                     self.image_view.emit(ImageViewMsg::UpdateSettings { 
-                        spread_mode: self.spread_view, 
-                        right_to_left: self.right_to_left,
-                        dir_sort: self.current_dir_sort,
-                        image_sort: self.current_image_sort,
-                        input_map: self.settings.input_map.clone(),
-                     });
-                     self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
-                     self.sidebar.emit(SidebarMsg::ChangeDirSort(self.current_dir_sort));
-                     self.sidebar.emit(SidebarMsg::ChangeImageSort(self.current_image_sort));
-                     
-                     // Check pending image open
-                     if let Some(pending) = &self.pending_open_image {
-                         self.image_view.emit(ImageViewMsg::ShowPages(vec![pending.clone()]));
-                         self.sidebar.emit(SidebarMsg::OpenImage(pending.clone()));
-                         self.current_image = Some(pending.clone());
-                         self.pending_open_image = None;
-                     } else {
-                         self.sidebar.emit(SidebarMsg::OpenFirstImage);
-                     }
-                }
+                self.handle_path_changed(path_str);
             }
             AppMsg::DirSortChanged(sort) => {
                 self.current_dir_sort = sort;
@@ -721,6 +606,135 @@ impl SimpleComponent for AppModel {
             }
             AppMsg::KeyInput(_, _) => {
                  // Deprecated / Handled by controller directly now
+            }
+        }
+    }
+}
+
+impl AppModel {
+    fn handle_path_changed(&mut self, path_str: String) {
+        self.last_path = Some(path_str.clone());
+        
+        if let Some(helper) = &self.db_helper {
+            // Save AppState
+            let state = crate::database::AppState { key: "global".to_string(), last_path: Some(path_str.clone()) };
+            let _ = helper.save_app_state(&state);
+            
+            // Defaults
+            self.spread_view = self.settings.default_spread_view;
+            self.right_to_left = self.settings.default_right_to_left;
+            self.current_dir_sort = self.settings.default_dir_sort;
+            self.current_image_sort = self.settings.default_image_sort;
+
+            let is_archive = path_str.to_lowercase().ends_with(".zip");
+
+            // Load Image Settings (from Archive or Dir)
+            if let Ok(Some(dir_settings)) = helper.get_directory_settings(&path_str) {
+                 self.spread_view = dir_settings.spread_view;
+                 self.right_to_left = dir_settings.right_to_left;
+                 self.current_image_sort = dir_settings.image_sort;
+                 if !is_archive {
+                     self.current_dir_sort = dir_settings.dir_sort;
+                 }
+            }
+
+            // Load Directory Sort (from Parent if Archive)
+            if is_archive {
+                let path = std::path::Path::new(&path_str);
+                if let Some(parent) = path.parent() {
+                    let parent_str = parent.to_string_lossy().to_string();
+                    if let Ok(Some(parent_settings)) = helper.get_directory_settings(&parent_str) {
+                        self.current_dir_sort = parent_settings.dir_sort;
+                    }
+                }
+            }
+             
+             // Update UI
+             self.image_view.emit(ImageViewMsg::UpdateSettings { 
+                spread_mode: self.spread_view, 
+                right_to_left: self.right_to_left,
+                dir_sort: self.current_dir_sort,
+                image_sort: self.current_image_sort,
+                input_map: self.settings.input_map.clone(),
+             });
+             self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
+             self.sidebar.emit(SidebarMsg::ChangeDirSort(self.current_dir_sort));
+             self.sidebar.emit(SidebarMsg::ChangeImageSort(self.current_image_sort));
+             
+             // Check pending image open
+             if let Some(pending) = &self.pending_open_image {
+                 self.image_view.emit(ImageViewMsg::ShowPages(vec![pending.clone()]));
+                 self.sidebar.emit(SidebarMsg::OpenImage(pending.clone()));
+                 self.current_image = Some(pending.clone());
+                 self.pending_open_image = None;
+             } else {
+                 self.sidebar.emit(SidebarMsg::OpenFirstImage);
+             }
+        }
+    }
+
+    fn handle_spread_mode_changed(&mut self, val: bool) {
+        self.spread_view = val;
+        
+        // Save directory settings
+        if let Some(helper) = &self.db_helper {
+             if let Some(path) = &self.last_path {
+                 let ds = crate::database::DirectorySettings {
+                     path: path.clone(),
+                     spread_view: self.spread_view,
+                     right_to_left: self.right_to_left,
+                     dir_sort: self.current_dir_sort,
+                     image_sort: self.current_image_sort,
+                  };
+                   let _ = helper.save_directory_settings(&ds);
+            }
+        }
+        
+        self.image_view.emit(ImageViewMsg::UpdateSettings { 
+            spread_mode: self.spread_view, 
+            right_to_left: self.right_to_left,
+            dir_sort: self.current_dir_sort,
+            image_sort: self.current_image_sort,
+            input_map: self.settings.input_map.clone(),
+        });
+        self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
+        
+         if let Some(path) = &self.current_image {
+            if self.spread_view {
+                self.sidebar.emit(SidebarMsg::GetSpreadPages(path.clone()));
+            } else {
+                self.image_view.emit(ImageViewMsg::ShowPages(vec![path.clone()]));
+            }
+        }
+    }
+
+    fn handle_rtl_changed(&mut self, val: bool) {
+        self.right_to_left = val;
+        if let Some(helper) = &self.db_helper {
+             if let Some(path_str) = &self.last_path {
+                  let ds = crate::database::DirectorySettings {
+                     path: path_str.clone(),
+                     spread_view: self.spread_view,
+                     right_to_left: self.right_to_left,
+                     dir_sort: self.current_dir_sort,
+                     image_sort: self.current_image_sort,
+                  };
+                   let _ = helper.save_directory_settings(&ds);
+             }
+        }
+        self.image_view.emit(ImageViewMsg::UpdateSettings { 
+            spread_mode: self.spread_view, 
+            right_to_left: self.right_to_left,
+             dir_sort: self.current_dir_sort,
+             image_sort: self.current_image_sort,
+             input_map: self.settings.input_map.clone(),
+        });
+        
+        if let Some(path) = &self.current_image {
+            if self.spread_view {
+                self.sidebar.emit(SidebarMsg::GetSpreadPages(path.clone()));
+            } else {
+                self.image_view.emit(ImageViewMsg::ShowPages(vec![path.clone()]));
             }
         }
     }

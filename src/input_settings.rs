@@ -36,6 +36,22 @@ impl Action {
             Action::NextPageSingle => "Next Image (Single Step)",
         }
     }
+    pub fn variants() -> &'static [Action] {
+        &[
+            Action::PrevDir,
+            Action::NextDir,
+            Action::PrevPage,
+            Action::NextPage,
+            Action::ToggleFullscreen,
+            Action::ZoomIn,
+            Action::ZoomOut,
+            Action::ResetZoom,
+            Action::ToggleSpread,
+            Action::ToggleRTL,
+            Action::PrevPageSingle,
+            Action::NextPageSingle,
+        ]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
