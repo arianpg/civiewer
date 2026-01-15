@@ -1,5 +1,7 @@
 # CIViewer
 
+![CIViewer](assets/civiewer.png)
+
 CIViewer is a high-performance, modern image viewer built with Rust and GTK4 (via Relm4). Designed for a seamless viewing experience, it supports browsing local image directories as well as images directly inside ZIP archives without decompression.
 
 ## Features
@@ -14,9 +16,14 @@ CIViewer is a high-performance, modern image viewer built with Rust and GTK4 (vi
 - **Customizable**: Settings for shortcuts and view preferences saved automatically (powered by PoloDB).
 - **Format Support**: JPEG, PNG, GIF, BMP, WebP.
 
-## Usage
+## Install
+
 ```bash
-./civiewer <path>
+# Debian/Ubuntu
+sudo dpkg -i civiewer_X.X.X-X_amd64.deb
+
+# Fedora/RHEL/CentOS
+sudo dnf install civiewer-X.X.X-X.x86_64.rpm
 ```
 
 ## Build
