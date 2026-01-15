@@ -1,4 +1,4 @@
-# CIViewer
+# CIViewer (Comic Image Viewer)
 
 ![CIViewer](docs/screenshot.png)
 
