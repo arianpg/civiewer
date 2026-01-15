@@ -2,6 +2,9 @@
 name = "civiewer"
 version = "0.1.0"
 edition = "2021"
+description = "A fast and minimal comic image viewer."
+license = "MIT"
+repository = "https://github.com/arianpg/civiewer"
 
 [dependencies]
 relm4 = "0.9"
@@ -18,3 +21,24 @@ tempfile = "3.10"
 
 [build-dependencies]
 glib-build-tools = "0.21.0"
+
+[package.metadata.deb]
+name = "civiewer"
+maintainer = "arianpg"
+copyright = "2026, arianpg"
+license-file = ["LICENSE", "4"]
+depends = "$auto"
+section = "graphics"
+priority = "optional"
+assets = [
+    ["target/release/civiewer", "usr/bin/", "755"],
+    ["assets/civiewer.desktop", "usr/share/applications/", "644"],
+    ["assets/civiewer.svg", "usr/share/icons/hicolor/scalable/apps/civiewer.svg", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/civiewer", dest = "/usr/bin/civiewer", mode = "755" },
+    { source = "assets/civiewer.desktop", dest = "/usr/share/applications/civiewer.desktop", mode = "644" },
+    { source = "assets/civiewer.svg", dest = "/usr/share/icons/hicolor/scalable/apps/civiewer.svg", mode = "644" },
+]

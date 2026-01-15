@@ -21,15 +21,14 @@ jobs:
           echo "Syncing version to $VERSION"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
-      - name: Build for linux
+      - name: Build for Linux (DEB/RPM)
         run: ./build/build-release-linux.sh
-
-#      - name: Build for Windows
-#        run: ./build/build-release-windows.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/CIViewer-linux.zip
+            target/release/*.deb
+            target/release/*.rpm
 #            target/x86_64-pc-windows-gnu/release/CIViewer-windows.zip

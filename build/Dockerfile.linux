@@ -4,6 +4,10 @@ RUN apt-get update && apt-get install -y \
     libgtk-4-dev \
     build-essential \
     zip \
+    rpm \
     && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install cargo-deb
+RUN cargo install cargo-generate-rpm
 
 WORKDIR /app
