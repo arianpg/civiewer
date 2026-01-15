@@ -69,7 +69,6 @@ pub enum AppMsg {
     CursorMotion,
     CheckCursorHide,
     TriggerAction(Action),
-    KeyInput(gtk4::gdk::Key, gtk4::gdk::ModifierType),
     ShowAbout,
     NoOp,
 }
@@ -611,9 +610,6 @@ impl SimpleComponent for AppModel {
                     Action::PrevPageSingle => _sender.input(AppMsg::PrevPageSingle),
                     Action::NextPageSingle => _sender.input(AppMsg::NextPageSingle),
                 }
-            }
-            AppMsg::KeyInput(_, _) => {
-                 // Deprecated / Handled by controller directly now
             }
             AppMsg::ShowAbout => {
                 let window = self.sidebar.widget().root().and_then(|r| r.downcast::<gtk4::Window>().ok());

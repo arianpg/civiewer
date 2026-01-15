@@ -8,16 +8,7 @@ pub enum Language {
 }
 
 impl Language {
-    pub fn variants() -> &'static [Language] {
-        &[Language::English, Language::Japanese]
-    }
 
-    pub fn label(&self) -> &'static str {
-        match self {
-            Language::English => "English",
-            Language::Japanese => "日本語",
-        }
-    }
 }
 
 pub fn localize(key: &str, lang: Language) -> String {
@@ -27,12 +18,7 @@ pub fn localize(key: &str, lang: Language) -> String {
     }
 }
 
-pub fn localize_enum(key: &str, lang: Language) -> String {
-     match lang {
-        Language::English => key.to_string(),
-        Language::Japanese => localize_ja(key),
-    }
-}
+
 
 
 fn localize_ja(key: &str) -> String {

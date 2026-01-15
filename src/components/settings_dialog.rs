@@ -1,4 +1,6 @@
 
+#![allow(unused_assignments)]
+
 use relm4::prelude::*;
 use relm4::factory::{FactoryVecDeque, DynamicIndex, FactoryComponent, FactorySender};
 use gtk4::prelude::*;
@@ -38,7 +40,6 @@ pub enum SettingsDialogMsg {
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
     StartCapture(Action),
-    CancelCapture,
     CaptureInput(InputSpec),
     ResetInputs,
     UpdateMouseBinding(MouseInputType, Option<Action>),
@@ -574,9 +575,6 @@ impl SimpleComponent for SettingsDialogModel {
             SettingsDialogMsg::StartCapture(action) => {
                 self.capturing_action = Some(action);
             }
-            SettingsDialogMsg::CancelCapture => {
-                self.capturing_action = None;
-            }
             SettingsDialogMsg::CaptureInput(spec) => {
                 if let Some(action) = self.capturing_action {
                      if let InputSpec::Keyboard { keyval, .. } = spec {
@@ -708,7 +706,7 @@ fn get_action_for_mouse_lookup(input_map: &InputMap, input_type: MouseInputType)
 
 #[derive(Debug)]
 pub struct KeyboardItem {
-    pub step_id: usize, // e.g. index in variants()
+    pub _step_id: usize, // e.g. index in variants()
     pub action: Action,
     pub label: String,
     pub description: String,
@@ -753,7 +751,7 @@ impl FactoryComponent for KeyboardItem {
     }
 
     fn init_model((step_id, action, label, description): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self { step_id, action, label, description }
+        Self { _step_id: step_id, action, label, description }
     }
 
     fn update(&mut self, msg: KeyboardItemMsg, _sender: FactorySender<Self>) {
@@ -768,7 +766,7 @@ impl FactoryComponent for KeyboardItem {
 
 #[derive(Debug)]
 pub struct MouseItem {
-    pub step_id: usize,
+    pub _step_id: usize,
     pub input_type: MouseInputType,
     pub current_setting: Option<Action>,
     pub label_text: String,
@@ -848,7 +846,7 @@ impl FactoryComponent for MouseItem {
     }
 
     fn init_model((step_id, input_type, current, label_text, language): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self { step_id, input_type, current_setting: current, label_text, language }
+        Self { _step_id: step_id, input_type, current_setting: current, label_text, language }
     }
 
     fn update(&mut self, msg: MouseItemMsg, _sender: FactorySender<Self>) {
