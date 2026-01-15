@@ -2,5 +2,5 @@
 
 set -e
 
-docker build -t civiewer-dev -f Dockerfile .
-docker run --rm -v ../:/app -w /app civiewer-dev cargo build
+docker build -t civiewer-build-linux -f $(pwd)/build/Dockerfile.linux .
+docker run --rm -v $(pwd)/:/app -w /app civiewer-build-linux cargo build

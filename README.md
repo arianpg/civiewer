@@ -27,8 +27,7 @@ CIViewer is a high-performance, modern image viewer built with Rust and GTK4 (vi
 ### Build with Docker
 A `Dockerfile` and build script are provided for a consistent build environment.
 ```bash
-cd build
-./build.sh
+./build/build.sh
 ```
 
 ## Development

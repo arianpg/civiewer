@@ -22,24 +22,14 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
       - name: Build for linux
-        run: cd build && ./build-release.sh
-
-      - name: Package Linux
-        run: |
-          cd target/release
-          zip -r ../../civiewer-linux-x64.zip civiewer ThirdPartyNotices.txt LICENSE
+        run: ./build/build-release-linux.sh
 
       - name: Build for Windows
-        run: cd build && ./build-windows.sh
-
-      - name: Package Windows
-        run: |
-          cd target/x86_64-pc-windows-gnu/release
-          zip -r ../../../civiewer-windows-x64.zip . -i "*.exe" "*.dll" "ThirdPartyNotices.txt" "LICENSE"
+        run: ./build/build-release-windows.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            civiewer-linux-x64.zip
-            civiewer-windows-x64.zip
+            target/release/CIViewer-linux.zip
+            target/x86_64-pc-windows-gnu/release/CIViewer-windows.zip
