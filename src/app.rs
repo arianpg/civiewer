@@ -70,6 +70,7 @@ pub enum AppMsg {
     CheckCursorHide,
     TriggerAction(Action),
     KeyInput(gtk4::gdk::Key, gtk4::gdk::ModifierType),
+    ShowAbout,
     NoOp,
 }
 
@@ -211,6 +212,11 @@ impl SimpleComponent for AppModel {
         let toggle_rtl = gtk4::gio::SimpleAction::new("toggle-rtl", None);
         toggle_rtl.connect_activate(move |_, _| { sender_clone.input(AppMsg::ToggleDirection); });
         action_group.add_action(&toggle_rtl);
+
+        let sender_clone = sender.clone();
+        let about_action = gtk4::gio::SimpleAction::new("about", None);
+        about_action.connect_activate(move |_, _| { sender_clone.input(AppMsg::ShowAbout); });
+        action_group.add_action(&about_action);
         
         root.insert_action_group("win", Some(&action_group));
 
@@ -609,6 +615,18 @@ impl SimpleComponent for AppModel {
             AppMsg::KeyInput(_, _) => {
                  // Deprecated / Handled by controller directly now
             }
+            AppMsg::ShowAbout => {
+                let window = self.sidebar.widget().root().and_then(|r| r.downcast::<gtk4::Window>().ok());
+                let dialog = gtk4::AboutDialog::builder()
+                    .transient_for(&window.unwrap_or_else(|| gtk4::Window::new()))
+                    .modal(true)
+                    .program_name("CIViewer")
+                    .version(env!("CARGO_PKG_VERSION"))
+                    .comments("Comic Image Viewer")
+                    .website("https://github.com/arianpg/civiewer") // Optional, but good practice
+                    .build();
+                dialog.present();
+            }
             AppMsg::NoOp => {}
         }
     }
@@ -754,6 +772,7 @@ fn create_menu_model(lang: Language) -> gtk4::gio::Menu {
     
     let settings_menu = gtk4::gio::Menu::new();
     settings_menu.append(Some(&localize("Preferences", lang)), Some("win.settings"));
+    settings_menu.append(Some(&localize("About", lang)), Some("win.about"));
     menu_model.append_submenu(Some(&localize("Settings", lang)), &settings_menu);
 
     menu_model

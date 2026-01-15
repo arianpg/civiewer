@@ -46,6 +46,7 @@ fn localize_ja(key: &str) -> String {
         "Open File" => "ファイルを開く".to_string(),
         "Open Directory" => "ディレクトリを開く".to_string(),
         "Quit" => "終了".to_string(),
+        "About" => "バージョン情報".to_string(),
         "Preferences" => "設定".to_string(),
         "Directory Defaults (Applied to new directories)" => "ディレクトリのデフォルト設定 (新規ディレクトリに適用)".to_string(),
         "Default Spread View" => "見開き表示をデフォルトにする".to_string(),
