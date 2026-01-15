@@ -12,6 +12,7 @@ use crate::components::settings_dialog::{SettingsDialogModel, SettingsDialogMsg,
 
 use crate::database::{AppSettings, AppState, DbHelper, SortType, DirectorySettings};
 use crate::input_settings::{InputMap, Action};
+use crate::i18n::{localize, Language};
 
 pub struct AppModel {
     sidebar: Controller<SidebarModel>,
@@ -33,6 +34,7 @@ pub struct AppModel {
     cursor_timeout: Option<gtk4::glib::SourceId>,
     last_cursor_motion: std::time::Instant,
     shared_input_map: std::rc::Rc<std::cell::RefCell<InputMap>>,
+    menu_model: gtk4::gio::Menu,
 }
 
 
@@ -86,7 +88,9 @@ impl SimpleComponent for AppModel {
                 set_orientation: gtk4::Orientation::Vertical,
                 
                 // Menubar
-                gtk4::PopoverMenuBar::from_model(Some(&menu_model)) {
+                gtk4::PopoverMenuBar::from_model(None::<&gtk4::gio::MenuModel>) {
+                    #[watch]
+                    set_menu_model: Some(&model.menu_model),
                     #[watch]
                     set_visible: !model.is_fullscreen,
                 },
@@ -173,17 +177,7 @@ impl SimpleComponent for AppModel {
             });
 
         // Menu Model
-        let menu_model = gtk4::gio::Menu::new();
-        
-        let file_menu = gtk4::gio::Menu::new();
-        file_menu.append(Some("Open File"), Some("win.open-file"));
-        file_menu.append(Some("Open Directory"), Some("win.open-dir"));
-        file_menu.append(Some("Quit"), Some("win.quit"));
-        menu_model.append_submenu(Some("File"), &file_menu);
-        
-        let settings_menu = gtk4::gio::Menu::new();
-        settings_menu.append(Some("Preferences"), Some("win.settings"));
-        menu_model.append_submenu(Some("Settings"), &settings_menu);
+        // Removed static menu_model init, using get_menu_model instead
         
         // Actions
         let action_group = gtk4::gio::SimpleActionGroup::new();
@@ -251,6 +245,9 @@ impl SimpleComponent for AppModel {
 
         // Shared InputMap for controller
         let shared_input_map = std::rc::Rc::new(std::cell::RefCell::new(settings.input_map.clone()));
+        
+        // Initial Menu Model
+        let menu_model = create_menu_model(settings.language);
 
         let model = AppModel {
             sidebar,
@@ -269,6 +266,7 @@ impl SimpleComponent for AppModel {
             cursor_timeout: None,
             last_cursor_motion: std::time::Instant::now(),
             shared_input_map: shared_input_map.clone(),
+            menu_model,
         };
         
         // Handle startup target
@@ -468,6 +466,9 @@ impl SimpleComponent for AppModel {
                     image_sort: self.settings.default_image_sort,
                     input_map: self.settings.input_map.clone(),
                 });
+                
+                // Update Menu
+                self.menu_model = create_menu_model(self.settings.language);
             }
             AppMsg::ToggleFullscreen => {
                 let window = &self.sidebar.widget().root().and_then(|r| r.downcast::<gtk4::Window>().ok());
@@ -740,4 +741,20 @@ impl AppModel {
             }
         }
     }
+}
+
+fn create_menu_model(lang: Language) -> gtk4::gio::Menu {
+    let menu_model = gtk4::gio::Menu::new();
+    
+    let file_menu = gtk4::gio::Menu::new();
+    file_menu.append(Some(&localize("Open File", lang)), Some("win.open-file"));
+    file_menu.append(Some(&localize("Open Directory", lang)), Some("win.open-dir"));
+    file_menu.append(Some(&localize("Quit", lang)), Some("win.quit"));
+    menu_model.append_submenu(Some(&localize("File", lang)), &file_menu);
+    
+    let settings_menu = gtk4::gio::Menu::new();
+    settings_menu.append(Some(&localize("Preferences", lang)), Some("win.settings"));
+    menu_model.append_submenu(Some(&localize("Settings", lang)), &settings_menu);
+
+    menu_model
 }

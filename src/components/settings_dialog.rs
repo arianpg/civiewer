@@ -6,6 +6,7 @@ use crate::database::{AppSettings, SortType};
 use crate::input_settings::{Action, InputMap, InputSpec};
 use gtk4::gdk;
 use gtk4::glib::translate::{IntoGlib, FromGlib};
+use crate::i18n::{Language, localize};
 
 #[derive(Debug)]
 pub struct SettingsDialogModel {
@@ -21,6 +22,7 @@ pub struct SettingsDialogModel {
     pub capturing_action: Option<Action>,
     pub keyboard_rows: FactoryVecDeque<KeyboardItem>,
     pub mouse_rows: FactoryVecDeque<MouseItem>,
+    pub language: Language,
 }
 
 #[derive(Debug)]
@@ -40,6 +42,7 @@ pub enum SettingsDialogMsg {
     CaptureInput(InputSpec),
     ResetInputs,
     UpdateMouseBinding(MouseInputType, Option<Action>),
+    UpdateLanguage(Language),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,14 +55,15 @@ pub enum MouseInputType {
 }
 
 impl MouseInputType {
-    fn label(&self) -> &'static str {
-        match self {
+    fn label(&self, lang: Language) -> String {
+        let key = match self {
             Self::RightClick => "Right Click",
             Self::MiddleClick => "Middle Click",
             Self::ScrollUp => "Scroll Up",
             Self::ScrollDown => "Scroll Down",
             Self::LeftDouble => "Left Double Click",
-        }
+        };
+        localize(key, lang)
     }
 
     fn variants() -> &'static [MouseInputType] {
@@ -97,7 +101,8 @@ impl SimpleComponent for SettingsDialogModel {
 
     view! {
         settings_window = gtk4::Window {
-            set_title: Some("Settings"),
+            #[watch]
+            set_title: Some(&localize("Settings", model.language)),
             set_default_width: 600,
             set_default_height: 700, 
             set_hide_on_close: true,
@@ -155,13 +160,15 @@ impl SimpleComponent for SettingsDialogModel {
                                 
                                 // --- Directory Defaults ---
                                 gtk4::Label {
-                                    set_label: "Directory Defaults (Applied to new directories)",
+                                    #[watch]
+                                    set_label: &localize("Directory Defaults (Applied to new directories)", model.language),
                                     set_xalign: 0.0,
                                     add_css_class: "title-4",
                                 },
                                 
                                 gtk4::CheckButton {
-                                    set_label: Some("Default Spread View"),
+                                    #[watch]
+                                    set_label: Some(&localize("Default Spread View", model.language)),
                                     #[watch]
                                     set_active: model.default_spread_view,
                                     connect_toggled[sender] => move |btn| {
@@ -170,7 +177,8 @@ impl SimpleComponent for SettingsDialogModel {
                                 },
                                 
                                 gtk4::CheckButton {
-                                    set_label: Some("Default Right to Left"),
+                                    #[watch]
+                                    set_label: Some(&localize("Default Right to Left", model.language)),
                                     #[watch]
                                     set_active: model.default_right_to_left,
                                     connect_toggled[sender] => move |btn| {
@@ -183,16 +191,18 @@ impl SimpleComponent for SettingsDialogModel {
                                     set_spacing: 10,
                                     
                                     gtk4::Label {
-                                        set_label: "Default Dir Sort:",
+                                        #[watch]
+                                        set_label: &localize("Default Dir Sort:", model.language),
                                     },
                                     
+                                    #[name(dir_sort_combo)]
                                     gtk4::ComboBoxText {
-                                        append: (Some("NameAsc"), "Name Asc"),
-                                        append: (Some("NameDesc"), "Name Desc"),
-                                        append: (Some("DateAsc"), "Date Asc"),
-                                        append: (Some("DateDesc"), "Date Desc"),
-                                        append: (Some("SizeAsc"), "Size Asc"),
-                                        append: (Some("SizeDesc"), "Size Desc"),
+                                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
+                                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
+                                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
+                                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
+                                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
+                                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
                                         #[watch]
                                         set_active_id: Some(match model.default_dir_sort {
                                             SortType::NameAsc => "NameAsc",
@@ -224,15 +234,17 @@ impl SimpleComponent for SettingsDialogModel {
                                     set_spacing: 10,
                                     
                                     gtk4::Label {
-                                        set_label: "Default Image Sort:",
+                                        #[watch]
+                                        set_label: &localize("Default Image Sort:", model.language),
                                     },
+                                     #[name(image_sort_combo)]
                                      gtk4::ComboBoxText {
-                                        append: (Some("NameAsc"), "Name Asc"),
-                                        append: (Some("NameDesc"), "Name Desc"),
-                                        append: (Some("DateAsc"), "Date Asc"),
-                                        append: (Some("DateDesc"), "Date Desc"),
-                                        append: (Some("SizeAsc"), "Size Asc"),
-                                        append: (Some("SizeDesc"), "Size Desc"),
+                                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
+                                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
+                                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
+                                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
+                                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
+                                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
                                         #[watch]
                                         set_active_id: Some(match model.default_image_sort {
                                             SortType::NameAsc => "NameAsc",
@@ -263,13 +275,45 @@ impl SimpleComponent for SettingsDialogModel {
         
                                 // --- Application Settings ---
                                 gtk4::Label {
-                                    set_label: "Application Settings",
+                                    #[watch]
+                                    set_label: &localize("Application Settings", model.language),
                                     set_xalign: 0.0,
                                     add_css_class: "title-4",
                                 },
                                 
+                                gtk4::Box {
+                                    set_orientation: gtk4::Orientation::Horizontal,
+                                    set_spacing: 10,
+                                    
+                                    gtk4::Label {
+                                        #[watch]
+                                        set_label: &localize("Language", model.language),
+                                    },
+
+                                    gtk4::ComboBoxText {
+                                        append: (Some("English"), "English"),
+                                        append: (Some("Japanese"), "日本語"),
+                                        #[watch]
+                                        set_active_id: Some(match model.language {
+                                            Language::English => "English",
+                                            Language::Japanese => "Japanese",
+                                        }),
+                                        connect_changed[sender] => move |cb| {
+                                            if let Some(id) = cb.active_id() {
+                                                let lang = match id.as_str() {
+                                                    "English" => Language::English,
+                                                    "Japanese" => Language::Japanese,
+                                                    _ => Language::English,
+                                                };
+                                                sender.input(SettingsDialogMsg::UpdateLanguage(lang));
+                                            }
+                                        }
+                                    },
+                                },
+
                                 gtk4::CheckButton {
-                                    set_label: Some("Dark Mode (Requires Restart)"),
+                                    #[watch]
+                                    set_label: Some(&localize("Dark Mode (Requires Restart)", model.language)),
                                     #[watch]
                                     set_active: model.dark_mode,
                                     connect_toggled[sender] => move |btn| {
@@ -278,7 +322,8 @@ impl SimpleComponent for SettingsDialogModel {
                                 },
                                 
                                 gtk4::CheckButton {
-                                     set_label: Some("Loop Images (at end of list)"),
+                                     #[watch]
+                                     set_label: Some(&localize("Loop Images (at end of list)", model.language)),
                                      #[watch]
                                      set_active: model.loop_images,
                                      connect_toggled[sender] => move |btn| {
@@ -287,7 +332,8 @@ impl SimpleComponent for SettingsDialogModel {
                                 },
         
                                 gtk4::CheckButton {
-                                     set_label: Some("Single Page for First Image (Spread View)"),
+                                     #[watch]
+                                     set_label: Some(&localize("Single Page for First Image (Spread View)", model.language)),
                                      #[watch]
                                      set_active: model.single_first_page,
                                      connect_toggled[sender] => move |btn| {
@@ -301,20 +347,23 @@ impl SimpleComponent for SettingsDialogModel {
                                 gtk4::Box {
                                     set_orientation: gtk4::Orientation::Horizontal,
                                     gtk4::Label {
-                                        set_label: "Input Configuration",
+                                        #[watch]
+                                        set_label: &localize("Input Configuration", model.language),
                                         set_xalign: 0.0,
                                         set_hexpand: true,
                                         add_css_class: "title-4",
                                     },
                                     gtk4::Button {
-                                        set_label: "Reset to Defaults",
+                                        #[watch]
+                                        set_label: &localize("Reset to Defaults", model.language),
                                         connect_clicked => SettingsDialogMsg::ResetInputs,
                                     }
                                 },
                                 
                                 // Keyboard Section
                                 gtk4::Label {
-                                    set_label: "Keyboard Shortcuts",
+                                    #[watch]
+                                    set_label: &localize("Keyboard Shortcuts", model.language),
                                     set_xalign: 0.0,
                                     add_css_class: "title-4",
                                     set_margin_top: 10,
@@ -325,7 +374,8 @@ impl SimpleComponent for SettingsDialogModel {
 
                                 // Mouse Section
                                 gtk4::Label {
-                                    set_label: "Mouse Configuration",
+                                    #[watch]
+                                    set_label: &localize("Mouse Configuration", model.language),
                                     set_xalign: 0.0,
                                     add_css_class: "title-4",
                                     set_margin_top: 10,
@@ -343,12 +393,14 @@ impl SimpleComponent for SettingsDialogModel {
                             set_margin_all: 10,
                             
                             gtk4::Button {
-                                set_label: "Cancel",
+                                #[watch]
+                                set_label: &localize("Cancel", model.language),
                                 connect_clicked => SettingsDialogMsg::Close,
                             },
                             
                             gtk4::Button {
-                                set_label: "Save",
+                                #[watch]
+                                set_label: &localize("Save", model.language),
                                 add_css_class: "suggested-action",
                                 connect_clicked => SettingsDialogMsg::Save,
                             }
@@ -395,6 +447,7 @@ impl SimpleComponent for SettingsDialogModel {
             capturing_action: None,
             keyboard_rows,
             mouse_rows,
+            language: Language::default(),
         };
         
         let keyboard_list = model.keyboard_rows.widget().clone();
@@ -480,6 +533,7 @@ impl SimpleComponent for SettingsDialogModel {
                 self.loop_images = settings.loop_images;
                 self.single_first_page = settings.single_first_page;
                 self.input_map = settings.input_map.clone();
+                self.language = settings.language;
                 self.capturing_action = None;
                 self.is_active = true;
                 self.populate_factories();
@@ -501,8 +555,13 @@ impl SimpleComponent for SettingsDialogModel {
                     loop_images: self.loop_images,
                     single_first_page: self.single_first_page,
                     input_map: self.input_map.clone(),
+                    language: self.language,
                 };
                 let _ = _sender.output(SettingsDialogOutput::SaveSettings(new_settings));
+            }
+            SettingsDialogMsg::UpdateLanguage(lang) => {
+                self.language = lang;
+                self.populate_factories();
             }
             SettingsDialogMsg::UpdateDarkMode(val) => self.dark_mode = val,
             SettingsDialogMsg::UpdateDefaultSpread(val) => self.default_spread_view = val,
@@ -591,13 +650,15 @@ impl SettingsDialogModel {
         self.keyboard_rows.guard().clear();
         for (idx, action) in Action::variants().iter().enumerate() {
             let label = format_keyboard_specs(self.input_map.map.get(action));
-            self.keyboard_rows.guard().push_back((idx, *action, label));
+            let desc = action.description(self.language);
+            self.keyboard_rows.guard().push_back((idx, *action, label, desc));
         }
         
         self.mouse_rows.guard().clear();
         for (idx, input_type) in MouseInputType::variants().iter().enumerate() {
             let current_action = get_action_for_mouse_lookup(&self.input_map, *input_type);
-            self.mouse_rows.guard().push_back((idx, *input_type, current_action));
+            let type_label = input_type.label(self.language);
+            self.mouse_rows.guard().push_back((idx, *input_type, current_action, type_label, self.language));
         }
     }
 }
@@ -650,6 +711,7 @@ pub struct KeyboardItem {
     pub step_id: usize, // e.g. index in variants()
     pub action: Action,
     pub label: String,
+    pub description: String,
 }
 
 #[derive(Debug)]
@@ -660,7 +722,7 @@ pub enum KeyboardItemMsg {
 
 #[relm4::factory(pub)]
 impl FactoryComponent for KeyboardItem {
-    type Init = (usize, Action, String);
+    type Init = (usize, Action, String, String);
     type Input = KeyboardItemMsg;
     type Output = SettingsDialogMsg;
     type CommandOutput = ();
@@ -674,7 +736,7 @@ impl FactoryComponent for KeyboardItem {
                 set_margin_all: 5,
                 
                 gtk4::Label {
-                    set_label: self.action.description(),
+                    set_label: &self.description,
                     set_hexpand: true,
                     set_xalign: 0.0,
                 },
@@ -690,8 +752,8 @@ impl FactoryComponent for KeyboardItem {
         }
     }
 
-    fn init_model((step_id, action, label): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self { step_id, action, label }
+    fn init_model((step_id, action, label, description): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        Self { step_id, action, label, description }
     }
 
     fn update(&mut self, msg: KeyboardItemMsg, _sender: FactorySender<Self>) {
@@ -709,6 +771,8 @@ pub struct MouseItem {
     pub step_id: usize,
     pub input_type: MouseInputType,
     pub current_setting: Option<Action>,
+    pub label_text: String,
+    pub language: Language,
 }
 
 #[derive(Debug)]
@@ -719,7 +783,7 @@ pub enum MouseItemMsg {
 
 #[relm4::factory(pub)]
 impl FactoryComponent for MouseItem {
-    type Init = (usize, MouseInputType, Option<Action>);
+    type Init = (usize, MouseInputType, Option<Action>, String, Language);
     type Input = MouseItemMsg;
     type Output = SettingsDialogMsg;
     type CommandOutput = ();
@@ -733,31 +797,25 @@ impl FactoryComponent for MouseItem {
                 set_margin_all: 5,
                 
                 gtk4::Label {
-                    set_label: self.input_type.label(),
+                    set_label: &self.label_text,
                     set_hexpand: true,
                     set_xalign: 0.0,
                 },
                 
                 gtk4::ComboBoxText {
-                    append: (Some("None"), "None"),
-                    // We need to populate this manually or via loop, but view! supports expression?
-                    // No, ComboBoxText population is better in code_behind or init_widgets? 
-                    // init_widgets runs after view!
-                    // Let's populate in callback or post-init.
-                    // Or just hardcode since Action variants are fixed.
-                    // But duplicates code... 10 lines.
-                    append: (Some("PrevDir"), "Previous Directory / Archive"),
-                    append: (Some("NextDir"), "Next Directory / Archive"),
-                    append: (Some("PrevPage"), "Previous Image"),
-                    append: (Some("NextPage"), "Next Image"),
-                    append: (Some("ToggleFullscreen"), "Toggle Fullscreen"),
-                    append: (Some("ZoomIn"), "Zoom In"),
-                    append: (Some("ZoomOut"), "Zoom Out"),
-                    append: (Some("ResetZoom"), "Reset Zoom"),
-                    append: (Some("ToggleSpread"), "Toggle Spread View"),
-                    append: (Some("ToggleRTL"), "Toggle Right-to-Left"),
-                    append: (Some("PrevPageSingle"), "Previous Image (Single Step)"),
-                    append: (Some("NextPageSingle"), "Next Image (Single Step)"),
+                    append: (Some("None"), &localize("None", self.language)),
+                    append: (Some("PrevDir"), &Action::PrevDir.description(self.language)),
+                    append: (Some("NextDir"), &Action::NextDir.description(self.language)),
+                    append: (Some("PrevPage"), &Action::PrevPage.description(self.language)),
+                    append: (Some("NextPage"), &Action::NextPage.description(self.language)),
+                    append: (Some("ToggleFullscreen"), &Action::ToggleFullscreen.description(self.language)),
+                    append: (Some("ZoomIn"), &Action::ZoomIn.description(self.language)),
+                    append: (Some("ZoomOut"), &Action::ZoomOut.description(self.language)),
+                    append: (Some("ResetZoom"), &Action::ResetZoom.description(self.language)),
+                    append: (Some("ToggleSpread"), &Action::ToggleSpread.description(self.language)),
+                    append: (Some("ToggleRTL"), &Action::ToggleRTL.description(self.language)),
+                    append: (Some("PrevPageSingle"), &Action::PrevPageSingle.description(self.language)),
+                    append: (Some("NextPageSingle"), &Action::NextPageSingle.description(self.language)),
                     
                     #[watch]
                     set_active_id: Some(self.current_setting.map(|a| format!("{:?}", a)).unwrap_or("None".to_string()).as_str()),
@@ -789,8 +847,8 @@ impl FactoryComponent for MouseItem {
         }
     }
 
-    fn init_model((step_id, input_type, current): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self { step_id, input_type, current_setting: current }
+    fn init_model((step_id, input_type, current, label_text, language): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        Self { step_id, input_type, current_setting: current, label_text, language }
     }
 
     fn update(&mut self, msg: MouseItemMsg, _sender: FactorySender<Self>) {

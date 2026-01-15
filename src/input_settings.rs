@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use gtk4::gdk;
 use gtk4::glib::translate::{IntoGlib, FromGlib};
+use crate::i18n::{Language, localize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
@@ -20,8 +21,8 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn description(&self) -> &str {
-        match self {
+    pub fn description(&self, lang: Language) -> String {
+        let key = match self {
             Action::PrevDir => "Previous Directory / Archive",
             Action::NextDir => "Next Directory / Archive",
             Action::PrevPage => "Previous Image",
@@ -34,7 +35,8 @@ impl Action {
             Action::ToggleRTL => "Toggle Right-to-Left",
             Action::PrevPageSingle => "Previous Image (Single Step)",
             Action::NextPageSingle => "Next Image (Single Step)",
-        }
+        };
+        localize(key, lang)
     }
     pub fn variants() -> &'static [Action] {
         &[

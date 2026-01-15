@@ -15,6 +15,7 @@ pub enum SortType {
 }
 
 use crate::input_settings::InputMap;
+use crate::i18n::Language;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DirectorySettings {
@@ -50,6 +51,8 @@ pub struct AppSettings {
     pub single_first_page: bool,
     #[serde(default)]
     pub input_map: InputMap,
+    #[serde(default)]
+    pub language: Language,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -74,6 +77,7 @@ impl Default for AppSettings {
             loop_images: false,
             single_first_page: false,
             input_map: InputMap::default(),
+            language: Language::default(),
         }
     }
 }

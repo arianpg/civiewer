@@ -3,6 +3,7 @@ use relm4::prelude::*;
 mod app;
 mod components;
 mod database;
+mod i18n;
 mod utils;
 
 use app::AppModel;
