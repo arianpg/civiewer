@@ -1,0 +1,59 @@
+CIViewer (Comic Image Viewer)
+Copyright (c) 2026 arianpg
+
+This software is provided "as is", without warranty of any kind.
+
+--------------------------------------------------------------------------------
+Third Party Components and Licenses
+--------------------------------------------------------------------------------
+
+This application makes use of the following third-party libraries and components.
+Their licenses are summarized below.
+
+## Rust Crates (Statically Linked)
+
+The following Rust crates are statically linked into the application binary.
+Most are licensed under MIT or Apache-2.0.
+
+- gtk4, gdk4, glib, gio, pango (MIT)
+- relm4 (MIT/Apache-2.0)
+- image (MIT)
+- polodb_core (MIT/Apache-2.0)
+- serde (MIT/Apache-2.0)
+- zip (MIT)
+- anyhow (MIT/Apache-2.0)
+- once_cell (MIT/Apache-2.0)
+- dirs (MIT)
+- tempfile (MIT/Apache-2.0)
+- natord (MIT)
+
+## GTK4 and GNOME Libraries (Dynamically Linked via DLLs)
+
+This application bundles the following libraries from the GTK/GNOME project.
+These libraries are licensed under the GNU Lesser General Public License (LGPL) v2.1 or later.
+
+- GTK4 (LGPL v2.1+)
+- GDK (LGPL v2.1+)
+- GLib / GIO / GObject (LGPL v2.1+)
+- Pango / Cairo (LGPL v2.1+ / MPL)
+- GdkPixbuf (LGPL v2.1+)
+
+You may modify these libraries and reverse engineer the application for debugging such modifications.
+Source code for these libraries can be obtained from https://gitlab.gnome.org/GNOME
+
+## MinGW-w64 Runtime Libraries (Bundled DLLs)
+
+This application bundles runtime libraries from the MinGW-w64 project.
+These are licensed under the GNU General Public License (GPL) v3 with the GCC Runtime Library Exception.
+
+- libgcc_s_seh-1.dll
+- libstdc++-6.dll
+- libwinpthread-1.dll
+
+The Runtime Library Exception permits valid usage of these libraries in non-GPL applications.
+
+## Other Libraries
+
+- libtiff (BSD-like)
+- libjpeg / libjpeg-turbo (IJG / BSD-like)
+- zlib (Zlib License)

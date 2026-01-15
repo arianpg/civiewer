@@ -22,8 +22,7 @@ CIViewer is a high-performance, modern image viewer built with Rust and GTK4 (vi
 ## Build
 
 ### Requirements
-- Rust (latest stable)
-- GTK4 development headers
+- Docker
 
 ### Build with Docker
 A `Dockerfile` and build script are provided for a consistent build environment.
@@ -34,3 +33,18 @@ cd build
 
 ## Development
 This project is developed with the assistance of **Gemini 3 Pro**.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2026 arianpg.
+This software is provided "as is", without warranty of any kind.
+
+### Third-Party Licenses
+This application includes open-source software.
+- **GTK4, GLib, Pango, Cairo, GdkPixbuf**: LGPL v2.1 or later.
+- **MinGW-w64 Runtime**: GPL v3 with GCC Runtime Library Exception.
+- **Rust Crates**: Mostly MIT or Apache-2.0.
+
+See `ThirdPartyNotices.txt` included in the distribution for full license details.
