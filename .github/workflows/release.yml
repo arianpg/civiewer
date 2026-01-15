@@ -24,12 +24,12 @@ jobs:
       - name: Build for linux
         run: ./build/build-release-linux.sh
 
-      - name: Build for Windows
-        run: ./build/build-release-windows.sh
+#      - name: Build for Windows
+#        run: ./build/build-release-windows.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/CIViewer-linux.zip
-            target/x86_64-pc-windows-gnu/release/CIViewer-windows.zip
+#            target/x86_64-pc-windows-gnu/release/CIViewer-windows.zip
