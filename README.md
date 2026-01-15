@@ -14,27 +14,22 @@ CIViewer is a high-performance, modern image viewer built with Rust and GTK4 (vi
 - **Customizable**: Settings for shortcuts and view preferences saved automatically (powered by PoloDB).
 - **Format Support**: JPEG, PNG, GIF, BMP, WebP.
 
-## Installation & Build
+## Usage
+```bash
+./civiewer <path>
+```
+
+## Build
 
 ### Requirements
 - Rust (latest stable)
 - GTK4 development headers
 
-### Build locally
-```bash
-cargo build --release
-```
-
 ### Build with Docker
 A `Dockerfile` and build script are provided for a consistent build environment.
 ```bash
+cd build
 ./build.sh
-```
-
-## Usage
-Run the application from the terminal or your application launcher.
-```bash
-cargo run --release
 ```
 
 ## Development
