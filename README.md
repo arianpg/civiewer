@@ -1,6 +1,6 @@
 # CIViewer
 
-![CIViewer](docs/civiewer.png)
+![CIViewer](docs/screenshot.png)
 
 CIViewer is a high-performance, modern image viewer built with Rust and GTK4 (via Relm4). Designed for a seamless viewing experience, it supports browsing local image directories as well as images directly inside ZIP archives without decompression.
 
