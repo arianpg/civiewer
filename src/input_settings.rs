@@ -135,14 +135,16 @@ impl Default for InputMap {
             InputSpec::Mouse { button: gdk::BUTTON_PRIMARY, modifiers: 0, double_click: true }
         ]);
         
-        // ZoomIn: + (plus)
+        // ZoomIn: + (plus), Ctrl + Scroll Up
         map.insert(Action::ZoomIn, vec![
-            InputSpec::Keyboard { keyval: gdk::Key::plus.into_glib(), modifiers: 0 }
+            InputSpec::Keyboard { keyval: gdk::Key::plus.into_glib(), modifiers: 0 },
+            InputSpec::Scroll { direction: ScrollDirection::Up, modifiers: gdk::ModifierType::CONTROL_MASK.bits() }
         ]);
         
-        // ZoomOut: - (minus)
+        // ZoomOut: - (minus), Ctrl + Scroll Down
         map.insert(Action::ZoomOut, vec![
-            InputSpec::Keyboard { keyval: gdk::Key::minus.into_glib(), modifiers: 0 }
+            InputSpec::Keyboard { keyval: gdk::Key::minus.into_glib(), modifiers: 0 },
+            InputSpec::Scroll { direction: ScrollDirection::Down, modifiers: gdk::ModifierType::CONTROL_MASK.bits() }
         ]);
         
         // ResetZoom: Escape

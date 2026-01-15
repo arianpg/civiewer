@@ -29,6 +29,7 @@ pub struct ImageViewModel {
     pub input_map: InputMap,
     generation: u32,
     visible_generation: u32,
+    viewport_size: (f64, f64),
 }
 
 #[derive(Debug)]
@@ -48,6 +49,7 @@ pub enum ImageViewMsg {
     MouseInput { button: u32, modifiers: u32, n_press: i32 },
     ScrollInput { dy: f64, modifiers: u32 },
     ImageLoaded { index: usize, source: LoadedImageSource, path: PathBuf, generation: u32 },
+    ViewportResized(f64, f64),
 }
 
 #[derive(Debug)]
@@ -192,6 +194,7 @@ impl SimpleComponent for ImageViewModel {
                 set_vexpand: true,
                 add_css_class: "image-view-background", 
             
+                #[name(main_stack)]
                 gtk4::Stack {
                     set_transition_type: gtk4::StackTransitionType::None,
                     #[watch]
@@ -216,8 +219,8 @@ impl SimpleComponent for ImageViewModel {
 
                         add_controller = gtk4::EventControllerScroll {
                             set_flags: gtk4::EventControllerScrollFlags::VERTICAL,
-                            connect_scroll[sender] => move |_, _dx, dy| {
-                                 let modifiers = 0;
+                            connect_scroll[sender] => move |controller, _dx, dy| {
+                                 let modifiers = controller.current_event_state().bits();
                                  sender.input(ImageViewMsg::ScrollInput { dy, modifiers }); 
                                  gtk4::glib::Propagation::Stop
                             }
@@ -280,7 +283,7 @@ impl SimpleComponent for ImageViewModel {
                                          model.textures_even.get(0)
                                     },
                                     #[watch]
-                                    set_can_shrink: model.is_fit_to_window,
+                                    set_can_shrink: true,
                                     #[watch]
                                     set_width_request: if model.is_fit_to_window { -1 } else { 
                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
@@ -317,7 +320,7 @@ impl SimpleComponent for ImageViewModel {
                                          None
                                     },
                                     #[watch]
-                                    set_can_shrink: model.is_fit_to_window,
+                                    set_can_shrink: true,
                                     #[watch]
                                     set_width_request: if model.is_fit_to_window { -1 } else { 
                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
@@ -355,8 +358,8 @@ impl SimpleComponent for ImageViewModel {
 
                         add_controller = gtk4::EventControllerScroll {
                             set_flags: gtk4::EventControllerScrollFlags::VERTICAL,
-                            connect_scroll[sender] => move |_, _dx, dy| {
-                                 let modifiers = 0;
+                            connect_scroll[sender] => move |controller, _dx, dy| {
+                                 let modifiers = controller.current_event_state().bits();
                                  sender.input(ImageViewMsg::ScrollInput { dy, modifiers }); 
                                  gtk4::glib::Propagation::Stop
                             }
@@ -419,7 +422,7 @@ impl SimpleComponent for ImageViewModel {
                                          model.textures_odd.get(0)
                                     },
                                     #[watch]
-                                    set_can_shrink: model.is_fit_to_window,
+                                    set_can_shrink: true,
                                     #[watch]
                                     set_width_request: if model.is_fit_to_window { -1 } else { 
                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
@@ -456,7 +459,7 @@ impl SimpleComponent for ImageViewModel {
                                          None
                                     },
                                     #[watch]
-                                    set_can_shrink: model.is_fit_to_window,
+                                    set_can_shrink: true,
                                     #[watch]
                                     set_width_request: if model.is_fit_to_window { -1 } else { 
                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
@@ -499,6 +502,7 @@ impl SimpleComponent for ImageViewModel {
             input_map: InputMap::default(),
             generation: 0,
             visible_generation: 0,
+            viewport_size: (0.0, 0.0),
         };
         
         let drag_state = std::rc::Rc::new(std::cell::RefCell::new((0.0, 0.0)));
@@ -509,6 +513,30 @@ impl SimpleComponent for ImageViewModel {
         let drag_state_odd_2 = drag_state_odd.clone();
         
         let widgets = view_output!();
+        {
+            let sender = sender.clone();
+            let mut child = widgets.main_stack.first_child();
+            while let Some(widget) = child {
+                if let Some(sw) = widget.downcast_ref::<gtk4::ScrolledWindow>() {
+                    let sender_clone = sender.clone();
+                    let sw_clone = sw.clone();
+                    sw.hadjustment().connect_notify_local(Some("page-size"), move |_, _| {
+                        let w = sw_clone.hadjustment().page_size();
+                        let h = sw_clone.vadjustment().page_size();
+                        sender_clone.input(ImageViewMsg::ViewportResized(w, h));
+                    });
+
+                    let sender_clone = sender.clone();
+                    let sw_clone = sw.clone();
+                    sw.vadjustment().connect_notify_local(Some("page-size"), move |_, _| {
+                        let w = sw_clone.hadjustment().page_size();
+                        let h = sw_clone.vadjustment().page_size();
+                        sender_clone.input(ImageViewMsg::ViewportResized(w, h));
+                    });
+                }
+                child = widget.next_sibling();
+            }
+        }
         
         // Manual fix to properly get scroll modifiers involves getting the controller from widgets
         // For now, simpler implementation is accepted.
@@ -690,14 +718,38 @@ impl SimpleComponent for ImageViewModel {
                       self.visible_generation = generation;
                   }
               }
+              ImageViewMsg::ViewportResized(w, h) => {
+                  self.viewport_size = (w, h);
+              }
               ImageViewMsg::ZoomIn => {
-                  self.is_fit_to_window = false;
-                  self.zoom *= 1.2;
+                  if self.is_fit_to_window {
+                      let new_zoom = self.calculate_current_fit_zoom();
+                      if new_zoom > 0.0 {
+                          self.zoom = new_zoom;
+                      }
+                      self.is_fit_to_window = false;
+                  }
+                  self.zoom *= 1.05;
               }
               ImageViewMsg::ZoomOut => {
-                  self.is_fit_to_window = false;
-                  self.zoom /= 1.2;
-                  if self.zoom < 0.1 { self.zoom = 0.1; }
+                  if self.is_fit_to_window {
+                      // Already at fit-to-window (minimum zoom), so ignore zoom out.
+                      return;
+                  }
+
+                  // Calculate the limit (fit zoom) based on current viewport
+                  let fit_zoom = self.calculate_current_fit_zoom();
+                  let mut new_zoom = self.zoom / 1.05;
+
+                  // Enforce lower bound (cannot zoom out smaller than fit-to-window)
+                  if new_zoom < fit_zoom {
+                      new_zoom = fit_zoom;
+                      // Optionally, we could set is_fit_to_window = true here if we snapped exactly,
+                      // but keeping it simple as requested (just restricting size).
+                  }
+
+                  if new_zoom < 0.01 { new_zoom = 0.01; }
+                  self.zoom = new_zoom;
               }
               ImageViewMsg::ResetZoom => {
                   self.is_fit_to_window = false;
@@ -759,13 +811,19 @@ impl SimpleComponent for ImageViewModel {
                ImageViewMsg::TriggerAction(action) => {
                    match action {
                        Action::ZoomIn => { 
-                           self.is_fit_to_window = false;
-                           self.zoom *= 1.2;
+                           if self.is_fit_to_window {
+                               self.is_fit_to_window = false;
+                               self.zoom = self.calculate_current_fit_zoom();
+                           }
+                           self.zoom *= 1.05;
                        },
                        Action::ZoomOut => { 
-                           self.is_fit_to_window = false;
-                           self.zoom /= 1.2;
-                           if self.zoom < 0.1 { self.zoom = 0.1; }
+                           if self.is_fit_to_window {
+                               self.is_fit_to_window = false;
+                               self.zoom = self.calculate_current_fit_zoom();
+                           }
+                           self.zoom /= 1.05;
+                           if self.zoom < 0.01 { self.zoom = 0.01; }
                        },
                        Action::ResetZoom => { 
                            self.is_fit_to_window = false;
@@ -788,5 +846,47 @@ impl SimpleComponent for ImageViewModel {
                     }
                }
          }
+    }
+
+
+    }
+
+impl ImageViewModel {
+    fn calculate_current_fit_zoom(&self) -> f64 {
+        let (view_w, view_h) = self.viewport_size;
+        if view_w <= 0.0 || view_h <= 0.0 { return 1.0; }
+
+        let textures = if self.visible_generation % 2 == 0 { &self.textures_even } else { &self.textures_odd };
+        if textures.is_empty() { return 1.0; }
+
+        let mut total_w: f64 = 0.0;
+        let mut max_h: f64 = 0.0;
+        
+        // Simulating the layout logic for spread/single to determine total content size
+        if self.spread_mode && textures.len() > 1 {
+             // For spread mode with >1 image, we display 2 images side-by-side
+             // Width is sum of 2, Height is max of 2
+             if let Some(t1) = textures.get(0) {
+                 total_w += t1.intrinsic_width() as f64;
+                 max_h = max_h.max(t1.intrinsic_height() as f64);
+             }
+             if let Some(t2) = textures.get(1) {
+                 total_w += t2.intrinsic_width() as f64;
+                 max_h = max_h.max(t2.intrinsic_height() as f64);
+             }
+        } else {
+             // Single image
+             if let Some(t) = textures.get(0) {
+                 total_w = t.intrinsic_width() as f64;
+                 max_h = t.intrinsic_height() as f64;
+             }
+        }
+        
+        if total_w <= 0.0 || max_h <= 0.0 { return 1.0; }
+
+        let scale_w = view_w / total_w;
+        let scale_h = view_h / max_h;
+        
+        scale_w.min(scale_h)
     }
 }
