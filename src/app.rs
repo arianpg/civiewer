@@ -6,7 +6,7 @@ use gtk4::prelude::*;
 use std::path::PathBuf;
 use dirs;
 
-use crate::components::sidebar::{SidebarModel, SidebarMsg, SidebarOutput};
+use crate::components::sidebar::{SidebarModel, SidebarMsg, SidebarOutput, scan_directory_custom};
 use crate::components::image_view::{ImageViewModel, ImageViewMsg, ImageViewOutput};
 use crate::components::settings_dialog::{SettingsDialogModel, SettingsDialogMsg, SettingsDialogOutput};
 
@@ -158,6 +158,8 @@ impl SimpleComponent for AppModel {
                 SidebarOutput::DirSortChanged(s) => AppMsg::DirSortChanged(s),
                 SidebarOutput::ImageSortChanged(s) => AppMsg::ImageSortChanged(s),
                 SidebarOutput::ClearImage => AppMsg::ClearImage,
+                SidebarOutput::RequestNextDir => AppMsg::NextDir,
+                SidebarOutput::RequestPrevDir => AppMsg::PrevDir,
             });
         let image_view = ImageViewModel::builder()
             .launch(())
@@ -589,10 +591,10 @@ impl SimpleComponent for AppModel {
                 self.sidebar.emit(SidebarMsg::ChangeImageSort(sort));
             }
             AppMsg::NextDir => {
-                self.sidebar.emit(SidebarMsg::OpenNextDir);
+                self.handle_request_neighbor_dir(true);
             }
             AppMsg::PrevDir => {
-                self.sidebar.emit(SidebarMsg::OpenPrevDir);
+                self.handle_request_neighbor_dir(false);
             }
             AppMsg::ClearImage => {
                 self.image_view.emit(ImageViewMsg::ShowPages(vec![]));
@@ -756,6 +758,53 @@ impl AppModel {
                 self.image_view.emit(ImageViewMsg::ShowPages(vec![path.clone()]));
             }
         }
+    }
+
+
+    fn handle_request_neighbor_dir(&mut self, is_next: bool) {
+        if let Some(current_path_str) = &self.last_path {
+            let current_path = PathBuf::from(current_path_str);
+            if let Some(target) = self.find_neighbor_directory_recursive(&current_path, is_next) {
+                 self.sidebar.emit(SidebarMsg::OpenDirectory(target));
+            }
+        }
+    }
+    
+    fn find_neighbor_directory_recursive(&self, current: &PathBuf, is_next: bool) -> Option<PathBuf> {
+         let parent = current.parent()?;
+         let parent_str = parent.to_string_lossy().to_string();
+         
+         // Default settings
+         let mut dir_sort = self.settings.default_dir_sort;
+         let archives_on_top = self.settings.archives_on_top;
+         
+         // Try load settings for parent
+         if let Some(helper) = &self.db_helper {
+             if let Ok(Some(ds)) = helper.get_directory_settings(&parent_str) {
+                 dir_sort = ds.dir_sort;
+             }
+         }
+         
+         let image_sort = self.settings.default_image_sort; 
+         
+         let (dirs, _) = scan_directory_custom(&parent.to_path_buf(), &dir_sort, &image_sort, archives_on_top);
+         
+         let idx = dirs.iter().position(|(_, p, _)| p == current);
+         
+         if let Some(i) = idx {
+             if is_next {
+                 if i + 1 < dirs.len() {
+                     return Some(dirs[i + 1].1.clone());
+                 }
+             } else {
+                 if i > 0 {
+                     return Some(dirs[i - 1].1.clone());
+                 }
+             }
+         }
+         
+         // Recursive step: go up
+         self.find_neighbor_directory_recursive(&parent.to_path_buf(), is_next)
     }
 }
 

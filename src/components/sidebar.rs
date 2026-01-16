@@ -58,8 +58,6 @@ pub enum SidebarMsg {
     OpenPrevImage(PathBuf),
     OpenNextImageSingle(PathBuf),
     OpenPrevImageSingle(PathBuf),
-    OpenNextDir,
-    OpenPrevDir,
     SelectImage(PathBuf),
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
@@ -87,6 +85,8 @@ pub enum SidebarOutput {
     DirSortChanged(SortType),
     ImageSortChanged(SortType),
     ClearImage,
+    RequestNextDir,
+    RequestPrevDir,
 }
 
 #[relm4::factory(pub)]
@@ -474,7 +474,7 @@ impl SimpleComponent for SidebarModel {
                                  self.images.broadcast(ImageItemMsg::UpdateSelection(self.selected_path.clone()));
                              }
                          } else {
-                             _sender.input(SidebarMsg::OpenNextDir);
+                             let _ = _sender.output(SidebarOutput::RequestNextDir);
                          }
                      }
                  }
@@ -516,7 +516,7 @@ impl SimpleComponent for SidebarModel {
                                     self.images.broadcast(ImageItemMsg::UpdateSelection(self.selected_path.clone()));
                                }
                            } else {
-                               _sender.input(SidebarMsg::OpenPrevDir);
+                               let _ = _sender.output(SidebarOutput::RequestPrevDir);
                            }
                      }
                  }
@@ -555,20 +555,6 @@ impl SimpleComponent for SidebarModel {
                      }
                  }
             }
-             SidebarMsg::OpenNextDir => {
-                 let current_ref = self.selected_dir_path.clone().unwrap_or_else(|| PathBuf::from(&self.current_path));
-                 
-                 if let Some(target) = self.find_neighbor_directory(&current_ref, true) {
-                     _sender.input(SidebarMsg::OpenDirectory(target));
-                 }
-             }
-             SidebarMsg::OpenPrevDir => {
-                 let current_ref = self.selected_dir_path.clone().unwrap_or_else(|| PathBuf::from(&self.current_path));
-                 
-                 if let Some(target) = self.find_neighbor_directory(&current_ref, false) {
-                     _sender.input(SidebarMsg::OpenDirectory(target));
-                 }
-             }
              SidebarMsg::SelectImage(path) => {
                  self.selected_path = Some(path);
                  self.images.broadcast(ImageItemMsg::UpdateSelection(self.selected_path.clone()));
@@ -601,25 +587,6 @@ impl SimpleComponent for SidebarModel {
 }
 
 impl SidebarModel {
-    fn find_neighbor_directory(&self, current: &PathBuf, is_next: bool) -> Option<PathBuf> {
-        let parent = current.parent()?;
-        let (dirs, _) = self.scan_directory(&parent.to_path_buf());
-        
-        let idx = dirs.iter().position(|(_, p, _)| p == current)?;
-        
-        if is_next {
-            if idx + 1 < dirs.len() {
-                return Some(dirs[idx + 1].1.clone());
-            }
-        } else {
-            if idx > 0 {
-                return Some(dirs[idx - 1].1.clone());
-            }
-        }
-        
-        // Recursive step
-        self.find_neighbor_directory(&parent.to_path_buf(), is_next)
-    }
     fn scroll_to_selected_directory(&self) {
         if let Some(sw) = &self.directories_scrolled_window {
             let mut found_idx = None;
@@ -776,6 +743,16 @@ impl SidebarModel {
     }
 
     fn scan_directory(&self, path: &PathBuf) -> (Vec<(String, PathBuf, bool)>, Vec<(String, PathBuf)>) {
+        scan_directory_custom(path, &self.dir_sort, &self.image_sort, self.archives_on_top)
+    }
+
+}
+pub fn scan_directory_custom(
+    path: &PathBuf, 
+    dir_sort: &SortType, 
+    image_sort: &SortType, 
+    archives_on_top: bool
+) -> (Vec<(String, PathBuf, bool)>, Vec<(String, PathBuf)>) {
          let mut dir_entries = Vec::new();
          let mut img_entries = Vec::new();
 
@@ -801,14 +778,14 @@ impl SidebarModel {
                                  }
                              }
                              // Sort Images in Archive
-                             match self.image_sort {
+                             match image_sort {
                                 SortType::NameAsc => img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
                                 SortType::NameDesc => { img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); img_entries.reverse(); },
                                 SortType::DateAsc | SortType::DateDesc | SortType::SizeAsc | SortType::SizeDesc => {
                                     // Zip entries don't easily support metadata access without costly lookups.
                                     // Default to name sort for now or implement if needed.
                                     img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0));
-                                     if matches!(self.image_sort, SortType::DateDesc | SortType::SizeDesc) {
+                                     if matches!(image_sort, SortType::DateDesc | SortType::SizeDesc) {
                                          img_entries.reverse();
                                      }
                                 }
@@ -848,7 +825,7 @@ impl SidebarModel {
             
             // Sort Directories
             // First sort by key based on sort type
-            match self.dir_sort {
+            match dir_sort {
                  SortType::NameAsc => dir_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
                  SortType::NameDesc => { dir_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); dir_entries.reverse(); },
                  SortType::DateAsc => dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
@@ -857,7 +834,7 @@ impl SidebarModel {
                  SortType::SizeDesc => { dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); dir_entries.reverse(); },
             }
             // Then stable sort by is_archive vs is_dir based on setting
-            if self.archives_on_top {
+            if archives_on_top {
                 // Archives (is_archive = true) come first (Ordering::Less)
                 dir_entries.sort_by(|a, b| {
                     match (a.2, b.2) {
@@ -878,7 +855,7 @@ impl SidebarModel {
             }
 
             // Sort Images
-            match self.image_sort {
+            match image_sort {
                  SortType::NameAsc => img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
                  SortType::NameDesc => { img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); img_entries.reverse(); },
                  SortType::DateAsc => img_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
@@ -890,5 +867,5 @@ impl SidebarModel {
         (dir_entries, img_entries)
     }
 
-}
+
 
