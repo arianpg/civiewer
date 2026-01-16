@@ -1,4 +1,4 @@
-# Maintainer: arianpg <arian@example.com>
+# Maintainer: arianpg <programmer.arian@gmail.com>
 pkgname=civiewer
 pkgver=0.1.0
 pkgrel=1
@@ -24,4 +24,5 @@ package() {
     install -Dm644 assets/civiewer.desktop "$pkgdir/usr/share/applications/$pkgname.desktop"
     install -Dm644 assets/civiewer.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/$pkgname.svg"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 ThirdPartyNotices.txt "$pkgdir/usr/share/licenses/$pkgname/ThirdPartyNotices.txt"
 }
