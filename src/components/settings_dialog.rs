@@ -20,6 +20,7 @@ pub struct SettingsDialogModel {
     pub default_image_sort: SortType,
     pub loop_images: bool,
     pub single_first_page: bool,
+    pub archives_on_top: bool,
     pub input_map: InputMap,
     pub capturing_action: Option<Action>,
     pub keyboard_rows: FactoryVecDeque<KeyboardItem>,
@@ -39,6 +40,7 @@ pub enum SettingsDialogMsg {
     UpdateDefaultImageSort(SortType),
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
+    UpdateArchivesOnTop(bool),
     StartCapture(Action),
     CaptureInput(InputSpec),
     ResetInputs,
@@ -165,6 +167,16 @@ impl SimpleComponent for SettingsDialogModel {
                                     set_label: &localize("Directory Defaults (Applied to new directories)", model.language),
                                     set_xalign: 0.0,
                                     add_css_class: "title-4",
+                                },
+
+                                gtk4::CheckButton {
+                                    #[watch]
+                                    set_label: Some(&localize("Show Archives on Top", model.language)),
+                                    #[watch]
+                                    set_active: model.archives_on_top,
+                                    connect_toggled[sender] => move |btn| {
+                                        sender.input(SettingsDialogMsg::UpdateArchivesOnTop(btn.is_active()));
+                                    }
                                 },
                                 
                                 gtk4::CheckButton {
@@ -408,6 +420,7 @@ impl SimpleComponent for SettingsDialogModel {
                         }
                     }
                     }
+
                 }
             }
         }
@@ -444,6 +457,7 @@ impl SimpleComponent for SettingsDialogModel {
             default_image_sort: SortType::NameAsc,
             loop_images: false,
             single_first_page: false,
+            archives_on_top: true,
             input_map: InputMap::default(),
             capturing_action: None,
             keyboard_rows,
@@ -533,6 +547,7 @@ impl SimpleComponent for SettingsDialogModel {
                 self.default_image_sort = settings.default_image_sort;
                 self.loop_images = settings.loop_images;
                 self.single_first_page = settings.single_first_page;
+                self.archives_on_top = settings.archives_on_top;
                 self.input_map = settings.input_map.clone();
                 self.language = settings.language;
                 self.capturing_action = None;
@@ -555,6 +570,7 @@ impl SimpleComponent for SettingsDialogModel {
                     default_image_sort: self.default_image_sort,
                     loop_images: self.loop_images,
                     single_first_page: self.single_first_page,
+                    archives_on_top: self.archives_on_top,
                     input_map: self.input_map.clone(),
                     language: self.language,
                 };
@@ -571,6 +587,7 @@ impl SimpleComponent for SettingsDialogModel {
             SettingsDialogMsg::UpdateDefaultImageSort(val) => self.default_image_sort = val,
             SettingsDialogMsg::UpdateLoopImages(val) => self.loop_images = val,
             SettingsDialogMsg::UpdateSingleFirstPage(val) => self.single_first_page = val,
+            SettingsDialogMsg::UpdateArchivesOnTop(val) => self.archives_on_top = val,
             
             SettingsDialogMsg::StartCapture(action) => {
                 self.capturing_action = Some(action);

@@ -303,6 +303,7 @@ impl SimpleComponent for AppModel {
         model.sidebar.emit(SidebarMsg::ChangeImageSort(model.current_image_sort));
         model.sidebar.emit(SidebarMsg::UpdateLoopImages(model.settings.loop_images));
         model.sidebar.emit(SidebarMsg::UpdateSingleFirstPage(model.settings.single_first_page));
+        model.sidebar.emit(SidebarMsg::UpdateArchivesOnTop(model.settings.archives_on_top));
 
         let widgets = view_output!();
         
@@ -463,6 +464,7 @@ impl SimpleComponent for AppModel {
                 if let Some(gtk_settings) = gtk4::Settings::default() {
                     gtk_settings.set_gtk_application_prefer_dark_theme(self.settings.dark_mode);
                 }
+                self.sidebar.emit(SidebarMsg::UpdateArchivesOnTop(self.settings.archives_on_top));
                 
                 self.image_view.emit(ImageViewMsg::UpdateSettings {
                     spread_mode: self.settings.default_spread_view,

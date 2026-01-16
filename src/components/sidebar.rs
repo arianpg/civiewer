@@ -40,6 +40,7 @@ pub struct SidebarModel {
     directories_scrolled_window: Option<gtk::ScrolledWindow>,
     loop_images: bool,
     single_first_page: bool,
+    archives_on_top: bool,
 }
 
 #[derive(Debug)]
@@ -62,6 +63,7 @@ pub enum SidebarMsg {
     SelectImage(PathBuf),
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
+    UpdateArchivesOnTop(bool),
     OpenFirstImage,
     ScrollToSelection,
 }
@@ -295,6 +297,7 @@ impl SimpleComponent for SidebarModel {
             directories_scrolled_window: None,
             loop_images: false,
             single_first_page: false,
+            archives_on_top: true,
         };
         
         let _initial_path = PathBuf::from(&model.current_path);
@@ -577,6 +580,10 @@ impl SimpleComponent for SidebarModel {
              SidebarMsg::UpdateSingleFirstPage(val) => {
                  self.single_first_page = val;
              }
+             SidebarMsg::UpdateArchivesOnTop(val) => {
+                 self.archives_on_top = val;
+                 self.refresh_view();
+             }
              SidebarMsg::OpenFirstImage => {
                  if let Some(first) = self.images.get(0) {
                      let _ = _sender.output(SidebarOutput::OpenImage(first.path.clone()));
@@ -840,6 +847,7 @@ impl SidebarModel {
             }
             
             // Sort Directories
+            // First sort by key based on sort type
             match self.dir_sort {
                  SortType::NameAsc => dir_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
                  SortType::NameDesc => { dir_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); dir_entries.reverse(); },
@@ -847,6 +855,26 @@ impl SidebarModel {
                  SortType::DateDesc => { dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); dir_entries.reverse(); },
                  SortType::SizeAsc => dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
                  SortType::SizeDesc => { dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); dir_entries.reverse(); },
+            }
+            // Then stable sort by is_archive vs is_dir based on setting
+            if self.archives_on_top {
+                // Archives (is_archive = true) come first (Ordering::Less)
+                dir_entries.sort_by(|a, b| {
+                    match (a.2, b.2) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
+            } else {
+                 // Dirs (is_archive = false) come first
+                 dir_entries.sort_by(|a, b| {
+                    match (a.2, b.2) {
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
             }
 
             // Sort Images
