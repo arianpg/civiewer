@@ -221,7 +221,7 @@ impl SimpleComponent for SidebarModel {
                      
                      gtk4::Label {
                         #[watch]
-                        set_text: &model.current_path,
+                        set_text: model.preview_archive_path.as_ref().map(|p| p.to_string_lossy()).as_deref().unwrap_or(&model.current_path),
                         set_hexpand: true,
                         set_xalign: 0.0,
                         set_ellipsize: gtk4::pango::EllipsizeMode::Middle,
