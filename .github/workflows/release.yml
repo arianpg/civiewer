@@ -20,9 +20,13 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "Syncing version to $VERSION"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD
 
       - name: Build for Linux (DEB/RPM)
         run: ./build/build-release-linux.sh
+
+      - name: Build for Arch Linux
+        run: ./build/build-release-arch.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -31,4 +35,4 @@ jobs:
             target/release/CIViewer-linux.zip
             target/release/*.deb
             target/release/*.rpm
-#            target/x86_64-pc-windows-gnu/release/CIViewer-windows.zip
+            target/release/*.pkg.tar.zst
