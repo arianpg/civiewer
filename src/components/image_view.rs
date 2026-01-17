@@ -577,7 +577,8 @@ impl SimpleComponent for ImageViewModel {
                                 // ... loading logic ...
                                 let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
                                     let ext = ext.to_lowercase();
-                                    if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
+                                    if ext == "gif" || ext == "apng" { return true; }
+                                    if ext == "webp" { return crate::utils::is_animated_webp(path); }
                                     if ext == "png" { return crate::utils::is_apng(path); }
                                     false
                                 });
@@ -616,7 +617,8 @@ impl SimpleComponent for ImageViewModel {
                                                                      let glib_bytes = gtk4::glib::Bytes::from(&buffer);
                                                                      let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
                                                                          let ext = ext.to_lowercase();
-                                                                         if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
+                                                                         if ext == "gif" || ext == "apng" { return true; }
+                                                                         if ext == "webp" { return crate::utils::is_animated_webp_bytes(&glib_bytes); }
                                                                          if ext == "png" { return crate::utils::is_apng_bytes(&glib_bytes); }
                                                                          false
                                                                      });
