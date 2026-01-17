@@ -1,6 +1,6 @@
 [package]
 name = "civiewer"
-version = "0.1.0"
+version = "1.0.1"
 edition = "2021"
 description = "A fast and minimal comic image viewer."
 license = "MIT"
