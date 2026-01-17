@@ -23,7 +23,7 @@ pub struct SettingsDialogModel {
     pub single_first_page: bool,
     pub archives_on_top: bool,
     pub input_map: InputMap,
-    pub capturing_action: Option<Action>,
+    pub capturing_action: Option<(Action, usize)>,
     pub keyboard_rows: FactoryVecDeque<KeyboardItem>,
     pub mouse_rows: FactoryVecDeque<MouseItem>,
     pub language: Language,
@@ -41,7 +41,7 @@ pub enum SettingsDialogMsg {
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
     UpdateArchivesOnTop(bool),
-    StartCapture(Action),
+    StartCapture(Action, usize),
     CaptureInput(InputSpec),
     ResetKeyboard,
     ResetMouse,
@@ -635,11 +635,11 @@ impl SimpleComponent for SettingsDialogModel {
             SettingsDialogMsg::UpdateSingleFirstPage(val) => self.single_first_page = val,
             SettingsDialogMsg::UpdateArchivesOnTop(val) => self.archives_on_top = val,
             
-            SettingsDialogMsg::StartCapture(action) => {
-                self.capturing_action = Some(action);
+            SettingsDialogMsg::StartCapture(action, slot) => {
+                self.capturing_action = Some((action, slot));
             }
             SettingsDialogMsg::CaptureInput(spec) => {
-                if let Some(action) = self.capturing_action {
+                if let Some((action, slot_idx)) = self.capturing_action {
                      if let InputSpec::Keyboard { keyval, .. } = spec {
                         if keyval == gtk4::gdk::Key::Escape.into_glib() {
                              self.capturing_action = None;
@@ -648,21 +648,59 @@ impl SimpleComponent for SettingsDialogModel {
                     }
                     
                     if matches!(spec, InputSpec::Keyboard { .. }) {
+                        // Get non-keyboard specs
                         let mut new_specs = Vec::new();
-                        if let Some(existing) = self.input_map.map.get(&action) {
+                         if let Some(existing) = self.input_map.map.get(&action) {
                             for s in existing {
                                 if !matches!(s, InputSpec::Keyboard { .. }) {
                                     new_specs.push(s.clone());
                                 }
                             }
                         }
-                        new_specs.push(spec);
+                        
+                        // Get keyboard specs
+                        let mut k_specs = Vec::new();
+                        if let Some(existing) = self.input_map.map.get(&action) {
+                             for s in existing {
+                                 if matches!(s, InputSpec::Keyboard { .. }) {
+                                     k_specs.push(s.clone());
+                                 }
+                             }
+                        }
+
+                        // Handle Backspace/Delete to clear
+                        let is_clear = if let InputSpec::Keyboard { keyval, .. } = spec {
+                            keyval == gtk4::gdk::Key::BackSpace.into_glib() || keyval == gtk4::gdk::Key::Delete.into_glib()
+                        } else {
+                            false
+                        };
+
+                        if is_clear {
+                             // Remove item at slot_idx if it exists
+                             if slot_idx < k_specs.len() {
+                                 k_specs.remove(slot_idx);
+                             }
+                        } else {
+                             // Update or Add
+                             if slot_idx < k_specs.len() {
+                                 k_specs[slot_idx] = spec;
+                             } else {
+                                 // Prevent gaps if possible, or just push. 
+                                 // Since UI is slot based, we can just push.
+                                 if k_specs.len() < 4 {
+                                     k_specs.push(spec);
+                                 }
+                             }
+                        }
+
+                        // Recombine
+                        new_specs.extend(k_specs);
                         self.input_map.map.insert(action, new_specs);
                         
                         // Update UI
                         if let Some(idx) = Action::variants().iter().position(|a| *a == action) {
-                              let label = format_keyboard_specs(self.input_map.map.get(&action));
-                              self.keyboard_rows.send(idx, KeyboardItemMsg::UpdateLabel(label));
+                              let keys = get_keyboard_labels(self.input_map.map.get(&action));
+                              self.keyboard_rows.send(idx, KeyboardItemMsg::UpdateKeys(keys));
                          }
                     }
                     self.capturing_action = None;
@@ -764,17 +802,18 @@ impl SimpleComponent for SettingsDialogModel {
     }
 }
 
-fn format_keyboard_specs(specs: Option<&Vec<InputSpec>>) -> String {
+fn get_keyboard_labels(specs: Option<&Vec<InputSpec>>) -> [String; 4] {
+    let mut keys = ["".to_string(), "".to_string(), "".to_string(), "".to_string()];
     if let Some(specs) = specs {
-        let s = specs.iter()
+        let k_specs: Vec<&InputSpec> = specs.iter()
             .filter(|s| matches!(s, InputSpec::Keyboard { .. }))
-            .map(|s| format_spec(s))
-            .collect::<Vec<_>>()
-            .join(", ");
-        if s.is_empty() { "None".to_string() } else { s }
-    } else {
-        "None".to_string()
+            .collect();
+            
+        for (i, spec) in k_specs.iter().enumerate().take(4) {
+            keys[i] = format_spec(spec);
+        }
     }
+    keys
 }
 
 // Helper for factories
@@ -782,9 +821,9 @@ impl SettingsDialogModel {
     fn populate_factories(&mut self) {
         self.keyboard_rows.guard().clear();
         for (idx, action) in Action::variants().iter().enumerate() {
-            let label = format_keyboard_specs(self.input_map.map.get(action));
+            let keys = get_keyboard_labels(self.input_map.map.get(action));
             let desc = action.description(self.language);
-            self.keyboard_rows.guard().push_back((idx, *action, label, desc));
+            self.keyboard_rows.guard().push_back((idx, *action, keys, desc));
         }
         
         self.mouse_rows.guard().clear();
@@ -841,21 +880,21 @@ fn get_action_for_mouse_lookup(input_map: &InputMap, input_type: MouseInputType)
 
 #[derive(Debug)]
 pub struct KeyboardItem {
-    pub _step_id: usize, // e.g. index in variants()
+    pub _step_id: usize,
     pub action: Action,
-    pub label: String,
+    pub keys: [String; 4],
     pub description: String,
 }
 
 #[derive(Debug)]
 pub enum KeyboardItemMsg {
-    UpdateLabel(String),
-    Interact,
+    UpdateKeys([String; 4]),
+    Interact(usize),
 }
 
 #[relm4::factory(pub)]
 impl FactoryComponent for KeyboardItem {
-    type Init = (usize, Action, String, String);
+    type Init = (usize, Action, [String; 4], String);
     type Input = KeyboardItemMsg;
     type Output = SettingsDialogMsg;
     type CommandOutput = ();
@@ -874,26 +913,64 @@ impl FactoryComponent for KeyboardItem {
                     set_xalign: 0.0,
                 },
                 
+                // Slot 0
                 gtk4::Button {
                     #[watch]
-                    set_label: &self.label,
+                    set_label: if self.keys[0].is_empty() { "Set..." } else { &self.keys[0] },
+                    add_css_class: if self.keys[0].is_empty() { "dim-label" } else { "key-button" },
                     connect_clicked[sender] => move |_| {
-                        sender.input(KeyboardItemMsg::Interact);
+                        sender.input(KeyboardItemMsg::Interact(0));
                     }
-                }
+                },
+
+                // Slot 1
+                gtk4::Button {
+                    #[watch]
+                    set_label: if self.keys[1].is_empty() { "Set..." } else { &self.keys[1] },
+                    #[watch]
+                    set_visible: !self.keys[0].is_empty() || !self.keys[1].is_empty(),
+                    add_css_class: if self.keys[1].is_empty() { "dim-label" } else { "key-button" },
+                    connect_clicked[sender] => move |_| {
+                        sender.input(KeyboardItemMsg::Interact(1));
+                    }
+                },
+
+                // Slot 2
+                gtk4::Button {
+                    #[watch]
+                    set_label: if self.keys[2].is_empty() { "Set..." } else { &self.keys[2] },
+                    #[watch]
+                    set_visible: !self.keys[1].is_empty() || !self.keys[2].is_empty(),
+                    add_css_class: if self.keys[2].is_empty() { "dim-label" } else { "key-button" },
+                    connect_clicked[sender] => move |_| {
+                        sender.input(KeyboardItemMsg::Interact(2));
+                    }
+                },
+
+                // Slot 3
+                gtk4::Button {
+                    #[watch]
+                    set_label: if self.keys[3].is_empty() { "Set..." } else { &self.keys[3] },
+                    #[watch]
+                    set_visible: !self.keys[2].is_empty() || !self.keys[3].is_empty(),
+                    add_css_class: if self.keys[3].is_empty() { "dim-label" } else { "key-button" },
+                    connect_clicked[sender] => move |_| {
+                        sender.input(KeyboardItemMsg::Interact(3));
+                    }
+                },
             }
         }
     }
 
-    fn init_model((step_id, action, label, description): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self { _step_id: step_id, action, label, description }
+    fn init_model((step_id, action, keys, description): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        Self { _step_id: step_id, action, keys, description }
     }
 
     fn update(&mut self, msg: KeyboardItemMsg, _sender: FactorySender<Self>) {
         match msg {
-            KeyboardItemMsg::UpdateLabel(s) => self.label = s,
-            KeyboardItemMsg::Interact => {
-                let _ = _sender.output(SettingsDialogMsg::StartCapture(self.action));
+            KeyboardItemMsg::UpdateKeys(k) => self.keys = k,
+            KeyboardItemMsg::Interact(slot) => {
+                let _ = _sender.output(SettingsDialogMsg::StartCapture(self.action, slot));
             }
         }
     }
