@@ -578,6 +578,11 @@ impl SimpleComponent for ImageViewModel {
                        self.textures_odd.clear();
                        self.temp_files_odd.clear();
                    }
+                   
+                   if paths.is_empty() {
+                       self.visible_generation = current_gen;
+                       return;
+                   }
 
                    let sender_clone = _sender.clone();
                    let paths_clone = paths.clone();
