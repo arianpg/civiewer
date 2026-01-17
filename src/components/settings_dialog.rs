@@ -4,6 +4,7 @@
 use relm4::prelude::*;
 use relm4::factory::{FactoryVecDeque, DynamicIndex, FactoryComponent, FactorySender};
 use gtk4::prelude::*;
+use std::collections::HashMap;
 use crate::database::{AppSettings, SortType};
 use crate::input_settings::{Action, InputMap, InputSpec};
 use gtk4::gdk;
@@ -42,7 +43,8 @@ pub enum SettingsDialogMsg {
     UpdateArchivesOnTop(bool),
     StartCapture(Action),
     CaptureInput(InputSpec),
-    ResetInputs,
+    ResetKeyboard,
+    ResetMouse,
     UpdateMouseBinding(MouseInputType, Option<Action>),
     UpdateLanguage(Language),
 }
@@ -382,7 +384,7 @@ impl SimpleComponent for SettingsDialogModel {
             }
         },
 
-        #[name(tab_input)]
+        #[name(tab_keyboard)]
         gtk4::ScrolledWindow {
             set_hscrollbar_policy: gtk4::PolicyType::Never,
             gtk4::Box {
@@ -394,7 +396,7 @@ impl SimpleComponent for SettingsDialogModel {
                     set_orientation: gtk4::Orientation::Horizontal,
                     gtk4::Label {
                         #[watch]
-                        set_label: &localize("Input Configuration", model.language),
+                        set_label: &localize("Keyboard Shortcuts", model.language),
                         set_xalign: 0.0,
                         set_hexpand: true,
                         add_css_class: "title-4",
@@ -402,29 +404,37 @@ impl SimpleComponent for SettingsDialogModel {
                     gtk4::Button {
                         #[watch]
                         set_label: &localize("Reset to Defaults", model.language),
-                        connect_clicked => SettingsDialogMsg::ResetInputs,
+                        connect_clicked => SettingsDialogMsg::ResetKeyboard,
                     }
                 },
                 
-                // Keyboard Section
-                gtk4::Label {
-                    #[watch]
-                    set_label: &localize("Keyboard Shortcuts", model.language),
-                    set_xalign: 0.0,
-                    add_css_class: "title-4",
-                    set_margin_top: 10,
-                },
-
                 #[local_ref]
                 keyboard_list -> gtk4::ListBox,
+            }
+        },
 
-                // Mouse Section
-                gtk4::Label {
-                    #[watch]
-                    set_label: &localize("Mouse Configuration", model.language),
-                    set_xalign: 0.0,
-                    add_css_class: "title-4",
-                    set_margin_top: 10,
+        #[name(tab_mouse)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Mouse Configuration", model.language),
+                        set_xalign: 0.0,
+                        set_hexpand: true,
+                        add_css_class: "title-4",
+                    },
+                    gtk4::Button {
+                        #[watch]
+                        set_label: &localize("Reset to Defaults", model.language),
+                        connect_clicked => SettingsDialogMsg::ResetMouse,
+                    }
                 },
 
                 #[local_ref]
@@ -444,10 +454,16 @@ impl SimpleComponent for SettingsDialogModel {
             set_label: &localize("Application", model.language),
         },
 
-        #[name(label_input)]
+        #[name(label_keyboard)]
         gtk4::Label {
             #[watch]
-            set_label: &localize("Input", model.language),
+            set_label: &localize("Keyboard", model.language),
+        },
+
+        #[name(label_mouse)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Mouse", model.language),
         }
     }
 
@@ -497,7 +513,8 @@ impl SimpleComponent for SettingsDialogModel {
         
         widgets.main_notebook.append_page(&widgets.tab_directory, Some(&widgets.label_directory));
         widgets.main_notebook.append_page(&widgets.tab_application, Some(&widgets.label_application));
-        widgets.main_notebook.append_page(&widgets.tab_input, Some(&widgets.label_input));
+        widgets.main_notebook.append_page(&widgets.tab_keyboard, Some(&widgets.label_keyboard));
+        widgets.main_notebook.append_page(&widgets.tab_mouse, Some(&widgets.label_mouse));
 
         // Add overlay child for capturing manually
         let capture_label = gtk4::Label::builder()
@@ -667,8 +684,80 @@ impl SimpleComponent for SettingsDialogModel {
                       self.mouse_rows.send(idx, MouseItemMsg::UpdateSetting(action_opt));
                   }
             }
-            SettingsDialogMsg::ResetInputs => {
-                self.input_map = InputMap::default();
+            SettingsDialogMsg::ResetKeyboard => {
+                let default_map = InputMap::default();
+                let mut new_map = HashMap::new();
+
+                // Process all actions from both current and default maps to ensure coverage
+                let mut actions: Vec<Action> = self.input_map.map.keys().cloned().collect();
+                for k in default_map.map.keys() {
+                    if !actions.contains(k) {
+                        actions.push(*k);
+                    }
+                }
+
+                for action in actions {
+                    let mut specs = Vec::new();
+                    // Keep existing mouse/scroll settings
+                    if let Some(existing_specs) = self.input_map.map.get(&action) {
+                        for spec in existing_specs {
+                            if !matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+                    // Add default keyboard settings
+                    if let Some(def_specs) = default_map.map.get(&action) {
+                        for spec in def_specs {
+                            if matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+                    
+                    if !specs.is_empty() {
+                         new_map.insert(action, specs);
+                    }
+                }
+                self.input_map.map = new_map;
+                self.populate_factories();
+            }
+            SettingsDialogMsg::ResetMouse => {
+                let default_map = InputMap::default();
+                let mut new_map = HashMap::new();
+
+                 // Process all actions
+                let mut actions: Vec<Action> = self.input_map.map.keys().cloned().collect();
+                for k in default_map.map.keys() {
+                    if !actions.contains(k) {
+                        actions.push(*k);
+                    }
+                }
+
+                for action in actions {
+                    let mut specs = Vec::new();
+                    // Keep existing keyboard settings
+                    if let Some(existing_specs) = self.input_map.map.get(&action) {
+                        for spec in existing_specs {
+                            if matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+                    // Add default mouse/scroll settings
+                    if let Some(def_specs) = default_map.map.get(&action) {
+                        for spec in def_specs {
+                            if !matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+
+                    if !specs.is_empty() {
+                         new_map.insert(action, specs);
+                    }
+                }
+                self.input_map.map = new_map;
                 self.populate_factories();
             }
         }
