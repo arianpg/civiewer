@@ -4,6 +4,7 @@ mod app;
 mod components;
 mod database;
 mod i18n;
+mod icon;
 mod utils;
 
 use app::AppModel;

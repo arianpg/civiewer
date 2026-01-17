@@ -97,7 +97,7 @@ impl SimpleComponent for ImageViewModel {
                         #[wrap(Some)]
                         set_child: spread_icon = &gtk4::Image {
                             #[watch]
-                            set_icon_name: Some(if model.spread_mode { "view-spread-on-symbolic" } else { "view-spread-off-symbolic" }),
+                            set_paintable: (if model.spread_mode { crate::icon::spread_on() } else { crate::icon::spread_off() }).as_ref(),
                             set_pixel_size: 24,
                         },
                         connect_clicked[sender] => move |_| {
@@ -112,7 +112,7 @@ impl SimpleComponent for ImageViewModel {
                         #[wrap(Some)]
                         set_child: rtl_icon = &gtk4::Image {
                             #[watch]
-                            set_icon_name: Some(if model.right_to_left { "view-binding-right-symbolic" } else { "view-binding-left-symbolic" }),
+                            set_paintable: (if model.right_to_left { crate::icon::binding_right() } else { crate::icon::binding_left() }).as_ref(), // Use .as_ref() for Option<&P>
                             set_pixel_size: 24,
                         },
                         connect_clicked[sender] => move |_| {
