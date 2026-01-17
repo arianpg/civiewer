@@ -20,10 +20,10 @@ CIViewer (Comic Image Viewer) is a high-performance, modern image viewer built w
 
 ```bash
 # Debian/Ubuntu
-sudo dpkg -i civiewer_X.X.X-X_amd64.deb
+sudo apt install ./civiewer_X.X.X-X_amd64.deb
 
 # Fedora/RHEL/CentOS
-sudo dnf install civiewer-X.X.X-X.x86_64.rpm
+sudo dnf install ./civiewer-X.X.X-X.x86_64.rpm
 ```
 
 ## Build
