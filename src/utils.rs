@@ -54,3 +54,22 @@ pub fn is_apng_bytes(bytes: &[u8]) -> bool {
     }
     false
 }
+
+pub fn is_animated_webp(path: &Path) -> bool {
+    if let Ok(file) = std::fs::File::open(path) {
+        let buf_reader = std::io::BufReader::new(file);
+        if let Ok(decoder) = image::codecs::webp::WebPDecoder::new(buf_reader) {
+             return decoder.has_animation();
+        }
+    }
+    false
+}
+
+pub fn is_animated_webp_bytes(bytes: &[u8]) -> bool {
+    let cursor = std::io::Cursor::new(bytes);
+    if let Ok(decoder) = image::codecs::webp::WebPDecoder::new(cursor) {
+        return decoder.has_animation();
+    }
+    false
+}
+

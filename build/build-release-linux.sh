@@ -11,7 +11,7 @@ cp target/release/civiewer target/release/CIViewer && \
 cp LICENSE target/release/CIViewer && \
 cp ThirdPartyNotices.txt target/release/CIViewer && \
 cp assets/civiewer.desktop target/release/CIViewer && \
-cp assets/civiewer.svg target/release/CIViewer && \
+cp assets/hicolor/scalable/apps/com.arianpg.civiewer.svg target/release/CIViewer && \
 cp target/debian/*.deb target/release/ && \
 cp target/generate-rpm/*.rpm target/release/ && \
 cd target/release && \

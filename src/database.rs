@@ -49,6 +49,8 @@ pub struct AppSettings {
     pub loop_images: bool,
     #[serde(default = "default_false")]
     pub single_first_page: bool,
+    #[serde(default = "default_true")]
+    pub archives_on_top: bool,
     #[serde(default)]
     pub input_map: InputMap,
     #[serde(default)]
@@ -76,6 +78,7 @@ impl Default for AppSettings {
             default_image_sort: SortType::NameAsc,
             loop_images: false,
             single_first_page: false,
+            archives_on_top: true,
             input_map: InputMap::default(),
             language: Language::default(),
         }

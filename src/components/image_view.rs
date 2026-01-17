@@ -3,6 +3,7 @@ use gtk4::prelude::*;
 use std::path::PathBuf;
 use crate::database::SortType;
 use crate::input_settings::{InputMap, Action, ScrollDirection};
+use crate::i18n::Language;
 
 #[derive(Debug)]
 pub enum LoadedImageSource {
@@ -27,6 +28,7 @@ pub struct ImageViewModel {
     temp_files_even: Vec<tempfile::NamedTempFile>,
     temp_files_odd: Vec<tempfile::NamedTempFile>,
     pub input_map: InputMap,
+    pub language: Language,
     generation: u32,
     visible_generation: u32,
     viewport_size: (f64, f64),
@@ -38,11 +40,11 @@ pub enum ImageViewMsg {
     ZoomIn,
     ZoomOut,
     ResetZoom,
-    UpdateSettings { spread_mode: bool, right_to_left: bool, dir_sort: SortType, image_sort: SortType, input_map: InputMap },
+    UpdateSettings { spread_mode: bool, right_to_left: bool, dir_sort: SortType, image_sort: SortType, input_map: InputMap, language: Language },
     ChangeDirSort(SortType),
     ChangeImageSort(SortType),
-    ToggleSpreadMode(bool),
-    ToggleRTL(bool),
+    ToggleSpread,
+    ToggleDirection,
     UpdateFullscreen(bool),
     LoadFallback(usize, PathBuf, Option<PathBuf>, u32),
     TriggerAction(Action),
@@ -88,23 +90,33 @@ impl SimpleComponent for ImageViewModel {
                     set_spacing: 10,
                     set_margin_all: 5,
                     
-                    gtk4::CheckButton {
-                        set_label: Some("Spread View"),
-                        set_focusable: false,
+                    gtk4::Button {
                         #[watch]
-                        set_active: model.spread_mode,
-                        connect_toggled[sender] => move |btn| {
-                            sender.input(ImageViewMsg::ToggleSpreadMode(btn.is_active()));
+                        set_tooltip_text: Some(&crate::i18n::localize("Toggle Spread View", model.language)),
+                        set_focusable: false,
+                        #[wrap(Some)]
+                        set_child: spread_icon = &gtk4::Image {
+                            #[watch]
+                            set_icon_name: Some(if model.spread_mode { "view-spread-on-symbolic" } else { "view-spread-off-symbolic" }),
+                            set_pixel_size: 24,
+                        },
+                        connect_clicked[sender] => move |_| {
+                            sender.input(ImageViewMsg::ToggleSpread);
                         }
                     },
                     
-                    gtk4::CheckButton {
-                        set_label: Some("Right to Left"),
-                        set_focusable: false,
+                    gtk4::Button {
                         #[watch]
-                        set_active: model.right_to_left,
-                        connect_toggled[sender] => move |btn| {
-                            sender.input(ImageViewMsg::ToggleRTL(btn.is_active()));
+                        set_tooltip_text: Some(&crate::i18n::localize("Toggle Right-to-Left", model.language)),
+                        set_focusable: false,
+                        #[wrap(Some)]
+                        set_child: rtl_icon = &gtk4::Image {
+                            #[watch]
+                            set_icon_name: Some(if model.right_to_left { "view-binding-right-symbolic" } else { "view-binding-left-symbolic" }),
+                            set_pixel_size: 24,
+                        },
+                        connect_clicked[sender] => move |_| {
+                            sender.input(ImageViewMsg::ToggleDirection);
                         }
                     },
                     
@@ -500,6 +512,7 @@ impl SimpleComponent for ImageViewModel {
             temp_files_even: Vec::new(),
             temp_files_odd: Vec::new(),
             input_map: InputMap::default(),
+            language: Language::default(),
             generation: 0,
             visible_generation: 0,
             viewport_size: (0.0, 0.0),
@@ -565,6 +578,11 @@ impl SimpleComponent for ImageViewModel {
                        self.textures_odd.clear();
                        self.temp_files_odd.clear();
                    }
+                   
+                   if paths.is_empty() {
+                       self.visible_generation = current_gen;
+                       return;
+                   }
 
                    let sender_clone = _sender.clone();
                    let paths_clone = paths.clone();
@@ -577,7 +595,8 @@ impl SimpleComponent for ImageViewModel {
                                 // ... loading logic ...
                                 let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
                                     let ext = ext.to_lowercase();
-                                    if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
+                                    if ext == "gif" || ext == "apng" { return true; }
+                                    if ext == "webp" { return crate::utils::is_animated_webp(path); }
                                     if ext == "png" { return crate::utils::is_apng(path); }
                                     false
                                 });
@@ -616,7 +635,8 @@ impl SimpleComponent for ImageViewModel {
                                                                      let glib_bytes = gtk4::glib::Bytes::from(&buffer);
                                                                      let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
                                                                          let ext = ext.to_lowercase();
-                                                                         if ext == "gif" || ext == "webp" || ext == "apng" { return true; }
+                                                                         if ext == "gif" || ext == "apng" { return true; }
+                                                                         if ext == "webp" { return crate::utils::is_animated_webp_bytes(&glib_bytes); }
                                                                          if ext == "png" { return crate::utils::is_apng_bytes(&glib_bytes); }
                                                                          false
                                                                      });
@@ -755,12 +775,13 @@ impl SimpleComponent for ImageViewModel {
                   self.is_fit_to_window = false;
                   self.zoom = 1.0;
               }
-              ImageViewMsg::UpdateSettings { spread_mode, right_to_left, dir_sort, image_sort, input_map } => {
+              ImageViewMsg::UpdateSettings { spread_mode, right_to_left, dir_sort, image_sort, input_map, language } => {
                   self.spread_mode = spread_mode;
                   self.right_to_left = right_to_left;
                   self.dir_sort = dir_sort;
                   self.image_sort = image_sort;
                   self.input_map = input_map;
+                  self.language = language;
               }
               ImageViewMsg::ChangeDirSort(sort) => {
                   if self.dir_sort != sort {
@@ -774,17 +795,13 @@ impl SimpleComponent for ImageViewModel {
                       let _ = _sender.output(ImageViewOutput::ImageSortChanged(sort));
                   }
               }
-              ImageViewMsg::ToggleSpreadMode(val) => {
-                  if self.spread_mode != val {
-                      self.spread_mode = val;
-                      let _ = _sender.output(ImageViewOutput::SpreadModeChanged(val));
-                  }
+              ImageViewMsg::ToggleSpread => {
+                   self.spread_mode = !self.spread_mode;
+                   let _ = _sender.output(ImageViewOutput::SpreadModeChanged(self.spread_mode));
               }
-              ImageViewMsg::ToggleRTL(val) => {
-                  if self.right_to_left != val {
-                      self.right_to_left = val;
-                      let _ = _sender.output(ImageViewOutput::RTLChanged(val));
-                  }
+              ImageViewMsg::ToggleDirection => {
+                   self.right_to_left = !self.right_to_left;
+                   let _ = _sender.output(ImageViewOutput::RTLChanged(self.right_to_left));
               }
                ImageViewMsg::UpdateFullscreen(val) => {
                    self.is_fullscreen = val;

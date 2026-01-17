@@ -33,12 +33,12 @@ priority = "optional"
 assets = [
     ["target/release/civiewer", "usr/bin/", "755"],
     ["assets/civiewer.desktop", "usr/share/applications/", "644"],
-    ["assets/civiewer.svg", "usr/share/icons/hicolor/scalable/apps/civiewer.svg", "644"],
+    ["assets/hicolor/scalable/apps/com.arianpg.civiewer.svg", "usr/share/icons/hicolor/scalable/apps/com.arianpg.civiewer.svg", "644"],
 ]
 
 [package.metadata.generate-rpm]
 assets = [
     { source = "target/release/civiewer", dest = "/usr/bin/civiewer", mode = "755" },
     { source = "assets/civiewer.desktop", dest = "/usr/share/applications/civiewer.desktop", mode = "644" },
-    { source = "assets/civiewer.svg", dest = "/usr/share/icons/hicolor/scalable/apps/civiewer.svg", mode = "644" },
+    { source = "assets/hicolor/scalable/apps/com.arianpg.civiewer.svg", dest = "/usr/share/icons/hicolor/scalable/apps/com.arianpg.civiewer.svg", mode = "644" },
 ]

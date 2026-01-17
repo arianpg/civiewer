@@ -3,10 +3,11 @@
 use relm4::prelude::*;
 use crate::utils::is_supported_image;
 use gtk4::prelude::*;
+use gtk4::License;
 use std::path::PathBuf;
 use dirs;
 
-use crate::components::sidebar::{SidebarModel, SidebarMsg, SidebarOutput};
+use crate::components::sidebar::{SidebarModel, SidebarMsg, SidebarOutput, scan_directory_custom};
 use crate::components::image_view::{ImageViewModel, ImageViewMsg, ImageViewOutput};
 use crate::components::settings_dialog::{SettingsDialogModel, SettingsDialogMsg, SettingsDialogOutput};
 
@@ -148,6 +149,13 @@ impl SimpleComponent for AppModel {
             );
         }
 
+        if let Some(display) = gtk4::gdk::Display::default() {
+            let icon_theme = gtk4::IconTheme::for_display(&display);
+            let mut assets_path = std::env::current_dir().unwrap_or_default();
+            assets_path.push("assets");
+            icon_theme.add_search_path(&assets_path);
+        }
+
         let sidebar = SidebarModel::builder()
             .launch(())
             .forward(sender.input_sender(), |output| match output {
@@ -158,6 +166,8 @@ impl SimpleComponent for AppModel {
                 SidebarOutput::DirSortChanged(s) => AppMsg::DirSortChanged(s),
                 SidebarOutput::ImageSortChanged(s) => AppMsg::ImageSortChanged(s),
                 SidebarOutput::ClearImage => AppMsg::ClearImage,
+                SidebarOutput::RequestNextDir => AppMsg::NextDir,
+                SidebarOutput::RequestPrevDir => AppMsg::PrevDir,
             });
         let image_view = ImageViewModel::builder()
             .launch(())
@@ -297,12 +307,14 @@ impl SimpleComponent for AppModel {
             dir_sort: model.current_dir_sort,
             image_sort: model.current_image_sort,
             input_map: model.settings.input_map.clone(),
+            language: model.settings.language,
         });
         model.sidebar.emit(SidebarMsg::UpdateSpreadMode(model.spread_view));
         model.sidebar.emit(SidebarMsg::ChangeDirSort(model.current_dir_sort));
         model.sidebar.emit(SidebarMsg::ChangeImageSort(model.current_image_sort));
         model.sidebar.emit(SidebarMsg::UpdateLoopImages(model.settings.loop_images));
         model.sidebar.emit(SidebarMsg::UpdateSingleFirstPage(model.settings.single_first_page));
+        model.sidebar.emit(SidebarMsg::UpdateArchivesOnTop(model.settings.archives_on_top));
 
         let widgets = view_output!();
         
@@ -463,6 +475,7 @@ impl SimpleComponent for AppModel {
                 if let Some(gtk_settings) = gtk4::Settings::default() {
                     gtk_settings.set_gtk_application_prefer_dark_theme(self.settings.dark_mode);
                 }
+                self.sidebar.emit(SidebarMsg::UpdateArchivesOnTop(self.settings.archives_on_top));
                 
                 self.image_view.emit(ImageViewMsg::UpdateSettings {
                     spread_mode: self.settings.default_spread_view,
@@ -470,6 +483,7 @@ impl SimpleComponent for AppModel {
                     dir_sort: self.settings.default_dir_sort,
                     image_sort: self.settings.default_image_sort,
                     input_map: self.settings.input_map.clone(),
+                    language: self.settings.language,
                 });
                 
                 // Update Menu
@@ -587,10 +601,10 @@ impl SimpleComponent for AppModel {
                 self.sidebar.emit(SidebarMsg::ChangeImageSort(sort));
             }
             AppMsg::NextDir => {
-                self.sidebar.emit(SidebarMsg::OpenNextDir);
+                self.handle_request_neighbor_dir(true);
             }
             AppMsg::PrevDir => {
-                self.sidebar.emit(SidebarMsg::OpenPrevDir);
+                self.handle_request_neighbor_dir(false);
             }
             AppMsg::ClearImage => {
                 self.image_view.emit(ImageViewMsg::ShowPages(vec![]));
@@ -620,6 +634,10 @@ impl SimpleComponent for AppModel {
                     .version(env!("CARGO_PKG_VERSION"))
                     .comments("Comic Image Viewer")
                     .website("https://github.com/arianpg/civiewer") // Optional, but good practice
+                    .authors(vec!["arianpg".to_string()])
+                    .copyright("© 2026 arianpg")
+                    .license_type(License::MitX11)
+                    .logo_icon_name("com.arianpg.civiewer")
                     .build();
                 dialog.present();
             }
@@ -673,6 +691,7 @@ impl AppModel {
                 dir_sort: self.current_dir_sort,
                 image_sort: self.current_image_sort,
                 input_map: self.settings.input_map.clone(),
+                language: self.settings.language,
              });
              self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
              self.sidebar.emit(SidebarMsg::ChangeDirSort(self.current_dir_sort));
@@ -713,6 +732,7 @@ impl AppModel {
             dir_sort: self.current_dir_sort,
             image_sort: self.current_image_sort,
             input_map: self.settings.input_map.clone(),
+            language: self.settings.language,
         });
         self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
         
@@ -745,6 +765,7 @@ impl AppModel {
              dir_sort: self.current_dir_sort,
              image_sort: self.current_image_sort,
              input_map: self.settings.input_map.clone(),
+             language: self.settings.language,
         });
         
         if let Some(path) = &self.current_image {
@@ -754,6 +775,53 @@ impl AppModel {
                 self.image_view.emit(ImageViewMsg::ShowPages(vec![path.clone()]));
             }
         }
+    }
+
+
+    fn handle_request_neighbor_dir(&mut self, is_next: bool) {
+        if let Some(current_path_str) = &self.last_path {
+            let current_path = PathBuf::from(current_path_str);
+            if let Some(target) = self.find_neighbor_directory_recursive(&current_path, is_next) {
+                 self.sidebar.emit(SidebarMsg::OpenDirectory(target));
+            }
+        }
+    }
+    
+    fn find_neighbor_directory_recursive(&self, current: &PathBuf, is_next: bool) -> Option<PathBuf> {
+         let parent = current.parent()?;
+         let parent_str = parent.to_string_lossy().to_string();
+         
+         // Default settings
+         let mut dir_sort = self.settings.default_dir_sort;
+         let archives_on_top = self.settings.archives_on_top;
+         
+         // Try load settings for parent
+         if let Some(helper) = &self.db_helper {
+             if let Ok(Some(ds)) = helper.get_directory_settings(&parent_str) {
+                 dir_sort = ds.dir_sort;
+             }
+         }
+         
+         let image_sort = self.settings.default_image_sort; 
+         
+         let (dirs, _) = scan_directory_custom(&parent.to_path_buf(), &dir_sort, &image_sort, archives_on_top);
+         
+         let idx = dirs.iter().position(|(_, p, _)| p == current);
+         
+         if let Some(i) = idx {
+             if is_next {
+                 if i + 1 < dirs.len() {
+                     return Some(dirs[i + 1].1.clone());
+                 }
+             } else {
+                 if i > 0 {
+                     return Some(dirs[i - 1].1.clone());
+                 }
+             }
+         }
+         
+         // Recursive step: go up
+         self.find_neighbor_directory_recursive(&parent.to_path_buf(), is_next)
     }
 }
 

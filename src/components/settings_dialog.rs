@@ -4,6 +4,7 @@
 use relm4::prelude::*;
 use relm4::factory::{FactoryVecDeque, DynamicIndex, FactoryComponent, FactorySender};
 use gtk4::prelude::*;
+use std::collections::HashMap;
 use crate::database::{AppSettings, SortType};
 use crate::input_settings::{Action, InputMap, InputSpec};
 use gtk4::gdk;
@@ -20,8 +21,9 @@ pub struct SettingsDialogModel {
     pub default_image_sort: SortType,
     pub loop_images: bool,
     pub single_first_page: bool,
+    pub archives_on_top: bool,
     pub input_map: InputMap,
-    pub capturing_action: Option<Action>,
+    pub capturing_action: Option<(Action, usize)>,
     pub keyboard_rows: FactoryVecDeque<KeyboardItem>,
     pub mouse_rows: FactoryVecDeque<MouseItem>,
     pub language: Language,
@@ -32,16 +34,17 @@ pub enum SettingsDialogMsg {
     Open(AppSettings),
     Close,
     Save,
-    UpdateDarkMode(bool),
     UpdateDefaultSpread(bool),
     UpdateDefaultRTL(bool),
     UpdateDefaultDirSort(SortType),
     UpdateDefaultImageSort(SortType),
     UpdateLoopImages(bool),
     UpdateSingleFirstPage(bool),
-    StartCapture(Action),
+    UpdateArchivesOnTop(bool),
+    StartCapture(Action, usize),
     CaptureInput(InputSpec),
-    ResetInputs,
+    ResetKeyboard,
+    ResetMouse,
     UpdateMouseBinding(MouseInputType, Option<Action>),
     UpdateLanguage(Language),
 }
@@ -101,6 +104,7 @@ impl SimpleComponent for SettingsDialogModel {
     type Init = ();
 
     view! {
+        #[root]
         settings_window = gtk4::Window {
             #[watch]
             set_title: Some(&localize("Settings", model.language)),
@@ -140,7 +144,7 @@ impl SimpleComponent for SettingsDialogModel {
             gtk4::Box {
                 set_orientation: gtk4::Orientation::Vertical,
                 
-                // Capture Overlay (Conditional)
+                // Capture Overlay
                 #[name(capture_overlay)]
                 gtk4::Overlay {
                     set_vexpand: true,
@@ -150,242 +154,12 @@ impl SimpleComponent for SettingsDialogModel {
                     set_child = &gtk4::Box {
                         set_orientation: gtk4::Orientation::Vertical,
                         
-                        gtk4::ScrolledWindow {
+                        #[name(main_notebook)]
+                        gtk4::Notebook {
                             set_vexpand: true,
                             set_hexpand: true,
-                            
-                            gtk4::Box {
-                                set_orientation: gtk4::Orientation::Vertical,
-                                set_spacing: 15,
-                                set_margin_all: 20,
-                                
-                                // --- Directory Defaults ---
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Directory Defaults (Applied to new directories)", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                },
-                                
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Default Spread View", model.language)),
-                                    #[watch]
-                                    set_active: model.default_spread_view,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateDefaultSpread(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Default Right to Left", model.language)),
-                                    #[watch]
-                                    set_active: model.default_right_to_left,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateDefaultRTL(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    set_spacing: 10,
-                                    
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Default Dir Sort:", model.language),
-                                    },
-                                    
-                                    #[name(dir_sort_combo)]
-                                    gtk4::ComboBoxText {
-                                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
-                                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
-                                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
-                                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
-                                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
-                                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
-                                        #[watch]
-                                        set_active_id: Some(match model.default_dir_sort {
-                                            SortType::NameAsc => "NameAsc",
-                                            SortType::NameDesc => "NameDesc",
-                                            SortType::DateAsc => "DateAsc",
-                                            SortType::DateDesc => "DateDesc",
-                                            SortType::SizeAsc => "SizeAsc",
-                                            SortType::SizeDesc => "SizeDesc",
-                                        }),
-                                        connect_changed[sender] => move |cb| {
-                                            if let Some(id) = cb.active_id() {
-                                                let sort = match id.as_str() {
-                                                    "NameAsc" => SortType::NameAsc,
-                                                    "NameDesc" => SortType::NameDesc,
-                                                    "DateAsc" => SortType::DateAsc,
-                                                    "DateDesc" => SortType::DateDesc,
-                                                    "SizeAsc" => SortType::SizeAsc,
-                                                    "SizeDesc" => SortType::SizeDesc,
-                                                    _ => SortType::NameAsc,
-                                                };
-                                                sender.input(SettingsDialogMsg::UpdateDefaultDirSort(sort));
-                                            }
-                                        }
-                                    },
-                                },
-        
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    set_spacing: 10,
-                                    
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Default Image Sort:", model.language),
-                                    },
-                                     #[name(image_sort_combo)]
-                                     gtk4::ComboBoxText {
-                                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
-                                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
-                                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
-                                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
-                                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
-                                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
-                                        #[watch]
-                                        set_active_id: Some(match model.default_image_sort {
-                                            SortType::NameAsc => "NameAsc",
-                                            SortType::NameDesc => "NameDesc",
-                                            SortType::DateAsc => "DateAsc",
-                                            SortType::DateDesc => "DateDesc",
-                                            SortType::SizeAsc => "SizeAsc",
-                                            SortType::SizeDesc => "SizeDesc",
-                                        }),
-                                        connect_changed[sender] => move |cb| {
-                                            if let Some(id) = cb.active_id() {
-                                                let sort = match id.as_str() {
-                                                    "NameAsc" => SortType::NameAsc,
-                                                    "NameDesc" => SortType::NameDesc,
-                                                    "DateAsc" => SortType::DateAsc,
-                                                    "DateDesc" => SortType::DateDesc,
-                                                    "SizeAsc" => SortType::SizeAsc,
-                                                    "SizeDesc" => SortType::SizeDesc,
-                                                    _ => SortType::NameAsc,
-                                                };
-                                                sender.input(SettingsDialogMsg::UpdateDefaultImageSort(sort));
-                                            }
-                                        }
-                                    },
-                                },
-                                
-                                gtk4::Separator {},
-        
-                                // --- Application Settings ---
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Application Settings", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                },
-                                
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    set_spacing: 10,
-                                    
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Language", model.language),
-                                    },
-
-                                    gtk4::ComboBoxText {
-                                        append: (Some("English"), "English"),
-                                        append: (Some("Japanese"), "日本語"),
-                                        #[watch]
-                                        set_active_id: Some(match model.language {
-                                            Language::English => "English",
-                                            Language::Japanese => "Japanese",
-                                        }),
-                                        connect_changed[sender] => move |cb| {
-                                            if let Some(id) = cb.active_id() {
-                                                let lang = match id.as_str() {
-                                                    "English" => Language::English,
-                                                    "Japanese" => Language::Japanese,
-                                                    _ => Language::English,
-                                                };
-                                                sender.input(SettingsDialogMsg::UpdateLanguage(lang));
-                                            }
-                                        }
-                                    },
-                                },
-
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Dark Mode (Requires Restart)", model.language)),
-                                    #[watch]
-                                    set_active: model.dark_mode,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateDarkMode(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::CheckButton {
-                                     #[watch]
-                                     set_label: Some(&localize("Loop Images (at end of list)", model.language)),
-                                     #[watch]
-                                     set_active: model.loop_images,
-                                     connect_toggled[sender] => move |btn| {
-                                         sender.input(SettingsDialogMsg::UpdateLoopImages(btn.is_active()));
-                                     }
-                                },
-        
-                                gtk4::CheckButton {
-                                     #[watch]
-                                     set_label: Some(&localize("Single Page for First Image (Spread View)", model.language)),
-                                     #[watch]
-                                     set_active: model.single_first_page,
-                                     connect_toggled[sender] => move |btn| {
-                                         sender.input(SettingsDialogMsg::UpdateSingleFirstPage(btn.is_active()));
-                                     }
-                                },
-                                
-                                gtk4::Separator {},
-                                
-                                // --- Input Settings ---
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Input Configuration", model.language),
-                                        set_xalign: 0.0,
-                                        set_hexpand: true,
-                                        add_css_class: "title-4",
-                                    },
-                                    gtk4::Button {
-                                        #[watch]
-                                        set_label: &localize("Reset to Defaults", model.language),
-                                        connect_clicked => SettingsDialogMsg::ResetInputs,
-                                    }
-                                },
-                                
-                                // Keyboard Section
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Keyboard Shortcuts", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                    set_margin_top: 10,
-                                },
-
-                                #[local_ref]
-                                keyboard_list -> gtk4::ListBox,
-
-                                // Mouse Section
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Mouse Configuration", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                    set_margin_top: 10,
-                                },
-
-                                #[local_ref]
-                                mouse_list -> gtk4::ListBox,
-                            }
                         },
+
                         // Footer
                         gtk4::Box {
                             set_orientation: gtk4::Orientation::Horizontal,
@@ -407,10 +181,291 @@ impl SimpleComponent for SettingsDialogModel {
                             }
                         }
                     }
-                    }
                 }
             }
+        },
+
+        #[name(tab_directory)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+                
+                gtk4::Label {
+                    #[watch]
+                    set_label: &localize("Directory Defaults (Applied to new directories)", model.language),
+                    set_xalign: 0.0,
+                    add_css_class: "title-4",
+                },
+
+                gtk4::CheckButton {
+                    #[watch]
+                    set_label: Some(&localize("Show Archives on Top", model.language)),
+                    #[watch]
+                    set_active: model.archives_on_top,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(SettingsDialogMsg::UpdateArchivesOnTop(btn.is_active()));
+                    }
+                },
+                
+                gtk4::CheckButton {
+                    #[watch]
+                    set_label: Some(&localize("Default Spread View", model.language)),
+                    #[watch]
+                    set_active: model.default_spread_view,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(SettingsDialogMsg::UpdateDefaultSpread(btn.is_active()));
+                    }
+                },
+                
+                gtk4::CheckButton {
+                    #[watch]
+                    set_label: Some(&localize("Default Right to Left", model.language)),
+                    #[watch]
+                    set_active: model.default_right_to_left,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(SettingsDialogMsg::UpdateDefaultRTL(btn.is_active()));
+                    }
+                },
+                
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    set_spacing: 10,
+                    
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Default Dir Sort:", model.language),
+                    },
+                    
+                    #[name(dir_sort_combo)]
+                    gtk4::ComboBoxText {
+                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
+                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
+                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
+                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
+                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
+                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
+                        #[watch]
+                        set_active_id: Some(match model.default_dir_sort {
+                            SortType::NameAsc => "NameAsc",
+                            SortType::NameDesc => "NameDesc",
+                            SortType::DateAsc => "DateAsc",
+                            SortType::DateDesc => "DateDesc",
+                            SortType::SizeAsc => "SizeAsc",
+                            SortType::SizeDesc => "SizeDesc",
+                        }),
+                        connect_changed[sender] => move |cb| {
+                            if let Some(id) = cb.active_id() {
+                                let sort = match id.as_str() {
+                                    "NameAsc" => SortType::NameAsc,
+                                    "NameDesc" => SortType::NameDesc,
+                                    "DateAsc" => SortType::DateAsc,
+                                    "DateDesc" => SortType::DateDesc,
+                                    "SizeAsc" => SortType::SizeAsc,
+                                    "SizeDesc" => SortType::SizeDesc,
+                                    _ => SortType::NameAsc,
+                                };
+                                sender.input(SettingsDialogMsg::UpdateDefaultDirSort(sort));
+                            }
+                        }
+                    },
+                },
+
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    set_spacing: 10,
+                    
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Default Image Sort:", model.language),
+                    },
+                        #[name(image_sort_combo)]
+                        gtk4::ComboBoxText {
+                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
+                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
+                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
+                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
+                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
+                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
+                        #[watch]
+                        set_active_id: Some(match model.default_image_sort {
+                            SortType::NameAsc => "NameAsc",
+                            SortType::NameDesc => "NameDesc",
+                            SortType::DateAsc => "DateAsc",
+                            SortType::DateDesc => "DateDesc",
+                            SortType::SizeAsc => "SizeAsc",
+                            SortType::SizeDesc => "SizeDesc",
+                        }),
+                        connect_changed[sender] => move |cb| {
+                            if let Some(id) = cb.active_id() {
+                                let sort = match id.as_str() {
+                                    "NameAsc" => SortType::NameAsc,
+                                    "NameDesc" => SortType::NameDesc,
+                                    "DateAsc" => SortType::DateAsc,
+                                    "DateDesc" => SortType::DateDesc,
+                                    "SizeAsc" => SortType::SizeAsc,
+                                    "SizeDesc" => SortType::SizeDesc,
+                                    _ => SortType::NameAsc,
+                                };
+                                sender.input(SettingsDialogMsg::UpdateDefaultImageSort(sort));
+                            }
+                        }
+                    },
+                },
+            }
+        },
+
+        #[name(tab_application)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+                
+                gtk4::Label {
+                    #[watch]
+                    set_label: &localize("Application Settings", model.language),
+                    set_xalign: 0.0,
+                    add_css_class: "title-4",
+                },
+                
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    set_spacing: 10,
+                    
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Language", model.language),
+                    },
+
+                    gtk4::ComboBoxText {
+                        append: (Some("English"), "English"),
+                        append: (Some("Japanese"), "日本語"),
+                        #[watch]
+                        set_active_id: Some(match model.language {
+                            Language::English => "English",
+                            Language::Japanese => "Japanese",
+                        }),
+                        connect_changed[sender] => move |cb| {
+                            if let Some(id) = cb.active_id() {
+                                let lang = match id.as_str() {
+                                    "English" => Language::English,
+                                    "Japanese" => Language::Japanese,
+                                    _ => Language::English,
+                                };
+                                sender.input(SettingsDialogMsg::UpdateLanguage(lang));
+                            }
+                        }
+                    },
+                },
+
+                gtk4::CheckButton {
+                        #[watch]
+                        set_label: Some(&localize("Loop Images (at end of list)", model.language)),
+                        #[watch]
+                        set_active: model.loop_images,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(SettingsDialogMsg::UpdateLoopImages(btn.is_active()));
+                        }
+                },
+
+                gtk4::CheckButton {
+                        #[watch]
+                        set_label: Some(&localize("Single Page for First Image (Spread View)", model.language)),
+                        #[watch]
+                        set_active: model.single_first_page,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(SettingsDialogMsg::UpdateSingleFirstPage(btn.is_active()));
+                        }
+                },
+            }
+        },
+
+        #[name(tab_keyboard)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Keyboard Shortcuts", model.language),
+                        set_xalign: 0.0,
+                        set_hexpand: true,
+                        add_css_class: "title-4",
+                    },
+                    gtk4::Button {
+                        #[watch]
+                        set_label: &localize("Reset to Defaults", model.language),
+                        connect_clicked => SettingsDialogMsg::ResetKeyboard,
+                    }
+                },
+                
+                #[local_ref]
+                keyboard_list -> gtk4::ListBox,
+            }
+        },
+
+        #[name(tab_mouse)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Mouse Configuration", model.language),
+                        set_xalign: 0.0,
+                        set_hexpand: true,
+                        add_css_class: "title-4",
+                    },
+                    gtk4::Button {
+                        #[watch]
+                        set_label: &localize("Reset to Defaults", model.language),
+                        connect_clicked => SettingsDialogMsg::ResetMouse,
+                    }
+                },
+
+                #[local_ref]
+                mouse_list -> gtk4::ListBox,
+            }
+        },
+        
+        #[name(label_directory)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Directory", model.language),
+        },
+        
+        #[name(label_application)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Application", model.language),
+        },
+
+        #[name(label_keyboard)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Keyboard", model.language),
+        },
+
+        #[name(label_mouse)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Mouse", model.language),
         }
+    }
 
     fn init(
         _init: Self::Init,
@@ -444,6 +499,7 @@ impl SimpleComponent for SettingsDialogModel {
             default_image_sort: SortType::NameAsc,
             loop_images: false,
             single_first_page: false,
+            archives_on_top: true,
             input_map: InputMap::default(),
             capturing_action: None,
             keyboard_rows,
@@ -455,6 +511,11 @@ impl SimpleComponent for SettingsDialogModel {
         let mouse_list = model.mouse_rows.widget().clone();
         let widgets = view_output!(keyboard_list, mouse_list);
         
+        widgets.main_notebook.append_page(&widgets.tab_directory, Some(&widgets.label_directory));
+        widgets.main_notebook.append_page(&widgets.tab_application, Some(&widgets.label_application));
+        widgets.main_notebook.append_page(&widgets.tab_keyboard, Some(&widgets.label_keyboard));
+        widgets.main_notebook.append_page(&widgets.tab_mouse, Some(&widgets.label_mouse));
+
         // Add overlay child for capturing manually
         let capture_label = gtk4::Label::builder()
             .label("Press a key (Esc to cancel)")
@@ -533,6 +594,7 @@ impl SimpleComponent for SettingsDialogModel {
                 self.default_image_sort = settings.default_image_sort;
                 self.loop_images = settings.loop_images;
                 self.single_first_page = settings.single_first_page;
+                self.archives_on_top = settings.archives_on_top;
                 self.input_map = settings.input_map.clone();
                 self.language = settings.language;
                 self.capturing_action = None;
@@ -555,6 +617,7 @@ impl SimpleComponent for SettingsDialogModel {
                     default_image_sort: self.default_image_sort,
                     loop_images: self.loop_images,
                     single_first_page: self.single_first_page,
+                    archives_on_top: self.archives_on_top,
                     input_map: self.input_map.clone(),
                     language: self.language,
                 };
@@ -564,19 +627,19 @@ impl SimpleComponent for SettingsDialogModel {
                 self.language = lang;
                 self.populate_factories();
             }
-            SettingsDialogMsg::UpdateDarkMode(val) => self.dark_mode = val,
             SettingsDialogMsg::UpdateDefaultSpread(val) => self.default_spread_view = val,
             SettingsDialogMsg::UpdateDefaultRTL(val) => self.default_right_to_left = val,
             SettingsDialogMsg::UpdateDefaultDirSort(val) => self.default_dir_sort = val,
             SettingsDialogMsg::UpdateDefaultImageSort(val) => self.default_image_sort = val,
             SettingsDialogMsg::UpdateLoopImages(val) => self.loop_images = val,
             SettingsDialogMsg::UpdateSingleFirstPage(val) => self.single_first_page = val,
+            SettingsDialogMsg::UpdateArchivesOnTop(val) => self.archives_on_top = val,
             
-            SettingsDialogMsg::StartCapture(action) => {
-                self.capturing_action = Some(action);
+            SettingsDialogMsg::StartCapture(action, slot) => {
+                self.capturing_action = Some((action, slot));
             }
             SettingsDialogMsg::CaptureInput(spec) => {
-                if let Some(action) = self.capturing_action {
+                if let Some((action, slot_idx)) = self.capturing_action {
                      if let InputSpec::Keyboard { keyval, .. } = spec {
                         if keyval == gtk4::gdk::Key::Escape.into_glib() {
                              self.capturing_action = None;
@@ -585,21 +648,59 @@ impl SimpleComponent for SettingsDialogModel {
                     }
                     
                     if matches!(spec, InputSpec::Keyboard { .. }) {
+                        // Get non-keyboard specs
                         let mut new_specs = Vec::new();
-                        if let Some(existing) = self.input_map.map.get(&action) {
+                         if let Some(existing) = self.input_map.map.get(&action) {
                             for s in existing {
                                 if !matches!(s, InputSpec::Keyboard { .. }) {
                                     new_specs.push(s.clone());
                                 }
                             }
                         }
-                        new_specs.push(spec);
+                        
+                        // Get keyboard specs
+                        let mut k_specs = Vec::new();
+                        if let Some(existing) = self.input_map.map.get(&action) {
+                             for s in existing {
+                                 if matches!(s, InputSpec::Keyboard { .. }) {
+                                     k_specs.push(s.clone());
+                                 }
+                             }
+                        }
+
+                        // Handle Backspace/Delete to clear
+                        let is_clear = if let InputSpec::Keyboard { keyval, .. } = spec {
+                            keyval == gtk4::gdk::Key::BackSpace.into_glib() || keyval == gtk4::gdk::Key::Delete.into_glib()
+                        } else {
+                            false
+                        };
+
+                        if is_clear {
+                             // Remove item at slot_idx if it exists
+                             if slot_idx < k_specs.len() {
+                                 k_specs.remove(slot_idx);
+                             }
+                        } else {
+                             // Update or Add
+                             if slot_idx < k_specs.len() {
+                                 k_specs[slot_idx] = spec;
+                             } else {
+                                 // Prevent gaps if possible, or just push. 
+                                 // Since UI is slot based, we can just push.
+                                 if k_specs.len() < 4 {
+                                     k_specs.push(spec);
+                                 }
+                             }
+                        }
+
+                        // Recombine
+                        new_specs.extend(k_specs);
                         self.input_map.map.insert(action, new_specs);
                         
                         // Update UI
                         if let Some(idx) = Action::variants().iter().position(|a| *a == action) {
-                              let label = format_keyboard_specs(self.input_map.map.get(&action));
-                              self.keyboard_rows.send(idx, KeyboardItemMsg::UpdateLabel(label));
+                              let keys = get_keyboard_labels(self.input_map.map.get(&action));
+                              self.keyboard_rows.send(idx, KeyboardItemMsg::UpdateKeys(keys));
                          }
                     }
                     self.capturing_action = None;
@@ -621,25 +722,98 @@ impl SimpleComponent for SettingsDialogModel {
                       self.mouse_rows.send(idx, MouseItemMsg::UpdateSetting(action_opt));
                   }
             }
-            SettingsDialogMsg::ResetInputs => {
-                self.input_map = InputMap::default();
+            SettingsDialogMsg::ResetKeyboard => {
+                let default_map = InputMap::default();
+                let mut new_map = HashMap::new();
+
+                // Process all actions from both current and default maps to ensure coverage
+                let mut actions: Vec<Action> = self.input_map.map.keys().cloned().collect();
+                for k in default_map.map.keys() {
+                    if !actions.contains(k) {
+                        actions.push(*k);
+                    }
+                }
+
+                for action in actions {
+                    let mut specs = Vec::new();
+                    // Keep existing mouse/scroll settings
+                    if let Some(existing_specs) = self.input_map.map.get(&action) {
+                        for spec in existing_specs {
+                            if !matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+                    // Add default keyboard settings
+                    if let Some(def_specs) = default_map.map.get(&action) {
+                        for spec in def_specs {
+                            if matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+                    
+                    if !specs.is_empty() {
+                         new_map.insert(action, specs);
+                    }
+                }
+                self.input_map.map = new_map;
+                self.populate_factories();
+            }
+            SettingsDialogMsg::ResetMouse => {
+                let default_map = InputMap::default();
+                let mut new_map = HashMap::new();
+
+                 // Process all actions
+                let mut actions: Vec<Action> = self.input_map.map.keys().cloned().collect();
+                for k in default_map.map.keys() {
+                    if !actions.contains(k) {
+                        actions.push(*k);
+                    }
+                }
+
+                for action in actions {
+                    let mut specs = Vec::new();
+                    // Keep existing keyboard settings
+                    if let Some(existing_specs) = self.input_map.map.get(&action) {
+                        for spec in existing_specs {
+                            if matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+                    // Add default mouse/scroll settings
+                    if let Some(def_specs) = default_map.map.get(&action) {
+                        for spec in def_specs {
+                            if !matches!(spec, InputSpec::Keyboard { .. }) {
+                                specs.push(spec.clone());
+                            }
+                        }
+                    }
+
+                    if !specs.is_empty() {
+                         new_map.insert(action, specs);
+                    }
+                }
+                self.input_map.map = new_map;
                 self.populate_factories();
             }
         }
     }
 }
 
-fn format_keyboard_specs(specs: Option<&Vec<InputSpec>>) -> String {
+fn get_keyboard_labels(specs: Option<&Vec<InputSpec>>) -> [String; 4] {
+    let mut keys = ["".to_string(), "".to_string(), "".to_string(), "".to_string()];
     if let Some(specs) = specs {
-        let s = specs.iter()
+        let k_specs: Vec<&InputSpec> = specs.iter()
             .filter(|s| matches!(s, InputSpec::Keyboard { .. }))
-            .map(|s| format_spec(s))
-            .collect::<Vec<_>>()
-            .join(", ");
-        if s.is_empty() { "None".to_string() } else { s }
-    } else {
-        "None".to_string()
+            .collect();
+            
+        for (i, spec) in k_specs.iter().enumerate().take(4) {
+            keys[i] = format_spec(spec);
+        }
     }
+    keys
 }
 
 // Helper for factories
@@ -647,9 +821,9 @@ impl SettingsDialogModel {
     fn populate_factories(&mut self) {
         self.keyboard_rows.guard().clear();
         for (idx, action) in Action::variants().iter().enumerate() {
-            let label = format_keyboard_specs(self.input_map.map.get(action));
+            let keys = get_keyboard_labels(self.input_map.map.get(action));
             let desc = action.description(self.language);
-            self.keyboard_rows.guard().push_back((idx, *action, label, desc));
+            self.keyboard_rows.guard().push_back((idx, *action, keys, desc));
         }
         
         self.mouse_rows.guard().clear();
@@ -706,21 +880,21 @@ fn get_action_for_mouse_lookup(input_map: &InputMap, input_type: MouseInputType)
 
 #[derive(Debug)]
 pub struct KeyboardItem {
-    pub _step_id: usize, // e.g. index in variants()
+    pub _step_id: usize,
     pub action: Action,
-    pub label: String,
+    pub keys: [String; 4],
     pub description: String,
 }
 
 #[derive(Debug)]
 pub enum KeyboardItemMsg {
-    UpdateLabel(String),
-    Interact,
+    UpdateKeys([String; 4]),
+    Interact(usize),
 }
 
 #[relm4::factory(pub)]
 impl FactoryComponent for KeyboardItem {
-    type Init = (usize, Action, String, String);
+    type Init = (usize, Action, [String; 4], String);
     type Input = KeyboardItemMsg;
     type Output = SettingsDialogMsg;
     type CommandOutput = ();
@@ -739,26 +913,64 @@ impl FactoryComponent for KeyboardItem {
                     set_xalign: 0.0,
                 },
                 
+                // Slot 0
                 gtk4::Button {
                     #[watch]
-                    set_label: &self.label,
+                    set_label: if self.keys[0].is_empty() { "Set..." } else { &self.keys[0] },
+                    add_css_class: if self.keys[0].is_empty() { "dim-label" } else { "key-button" },
                     connect_clicked[sender] => move |_| {
-                        sender.input(KeyboardItemMsg::Interact);
+                        sender.input(KeyboardItemMsg::Interact(0));
                     }
-                }
+                },
+
+                // Slot 1
+                gtk4::Button {
+                    #[watch]
+                    set_label: if self.keys[1].is_empty() { "Set..." } else { &self.keys[1] },
+                    #[watch]
+                    set_visible: !self.keys[0].is_empty() || !self.keys[1].is_empty(),
+                    add_css_class: if self.keys[1].is_empty() { "dim-label" } else { "key-button" },
+                    connect_clicked[sender] => move |_| {
+                        sender.input(KeyboardItemMsg::Interact(1));
+                    }
+                },
+
+                // Slot 2
+                gtk4::Button {
+                    #[watch]
+                    set_label: if self.keys[2].is_empty() { "Set..." } else { &self.keys[2] },
+                    #[watch]
+                    set_visible: !self.keys[1].is_empty() || !self.keys[2].is_empty(),
+                    add_css_class: if self.keys[2].is_empty() { "dim-label" } else { "key-button" },
+                    connect_clicked[sender] => move |_| {
+                        sender.input(KeyboardItemMsg::Interact(2));
+                    }
+                },
+
+                // Slot 3
+                gtk4::Button {
+                    #[watch]
+                    set_label: if self.keys[3].is_empty() { "Set..." } else { &self.keys[3] },
+                    #[watch]
+                    set_visible: !self.keys[2].is_empty() || !self.keys[3].is_empty(),
+                    add_css_class: if self.keys[3].is_empty() { "dim-label" } else { "key-button" },
+                    connect_clicked[sender] => move |_| {
+                        sender.input(KeyboardItemMsg::Interact(3));
+                    }
+                },
             }
         }
     }
 
-    fn init_model((step_id, action, label, description): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self { _step_id: step_id, action, label, description }
+    fn init_model((step_id, action, keys, description): Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        Self { _step_id: step_id, action, keys, description }
     }
 
     fn update(&mut self, msg: KeyboardItemMsg, _sender: FactorySender<Self>) {
         match msg {
-            KeyboardItemMsg::UpdateLabel(s) => self.label = s,
-            KeyboardItemMsg::Interact => {
-                let _ = _sender.output(SettingsDialogMsg::StartCapture(self.action));
+            KeyboardItemMsg::UpdateKeys(k) => self.keys = k,
+            KeyboardItemMsg::Interact(slot) => {
+                let _ = _sender.output(SettingsDialogMsg::StartCapture(self.action, slot));
             }
         }
     }
@@ -853,7 +1065,9 @@ impl FactoryComponent for MouseItem {
         match msg {
             MouseItemMsg::UpdateSetting(a) => self.current_setting = a,
             MouseItemMsg::Change(a) => {
-                 let _ = _sender.output(SettingsDialogMsg::UpdateMouseBinding(self.input_type, a));
+                 if self.current_setting != a {
+                     let _ = _sender.output(SettingsDialogMsg::UpdateMouseBinding(self.input_type, a));
+                 }
             }
         }
     }
