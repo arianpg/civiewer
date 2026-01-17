@@ -2,7 +2,7 @@
 Name=CIViewer
 Comment=Comic Image Viewer
 Exec=civiewer %u
-Icon=civiewer
+Icon=com.arianpg.civiewer
 Terminal=false
 Type=Application
 Categories=Graphics;Viewer;

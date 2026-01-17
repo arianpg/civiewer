@@ -3,6 +3,7 @@
 use relm4::prelude::*;
 use crate::utils::is_supported_image;
 use gtk4::prelude::*;
+use gtk4::License;
 use std::path::PathBuf;
 use dirs;
 
@@ -146,6 +147,13 @@ impl SimpleComponent for AppModel {
                 &provider,
                 gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
+        }
+
+        if let Some(display) = gtk4::gdk::Display::default() {
+            let icon_theme = gtk4::IconTheme::for_display(&display);
+            let mut assets_path = std::env::current_dir().unwrap_or_default();
+            assets_path.push("assets");
+            icon_theme.add_search_path(&assets_path);
         }
 
         let sidebar = SidebarModel::builder()
@@ -624,6 +632,10 @@ impl SimpleComponent for AppModel {
                     .version(env!("CARGO_PKG_VERSION"))
                     .comments("Comic Image Viewer")
                     .website("https://github.com/arianpg/civiewer") // Optional, but good practice
+                    .authors(vec!["arianpg".to_string()])
+                    .copyright("© 2026 arianpg")
+                    .license_type(License::MitX11)
+                    .logo_icon_name("com.arianpg.civiewer")
                     .build();
                 dialog.present();
             }
