@@ -33,7 +33,6 @@ pub enum SettingsDialogMsg {
     Open(AppSettings),
     Close,
     Save,
-    UpdateDarkMode(bool),
     UpdateDefaultSpread(bool),
     UpdateDefaultRTL(bool),
     UpdateDefaultDirSort(SortType),
@@ -103,6 +102,7 @@ impl SimpleComponent for SettingsDialogModel {
     type Init = ();
 
     view! {
+        #[root]
         settings_window = gtk4::Window {
             #[watch]
             set_title: Some(&localize("Settings", model.language)),
@@ -142,7 +142,7 @@ impl SimpleComponent for SettingsDialogModel {
             gtk4::Box {
                 set_orientation: gtk4::Orientation::Vertical,
                 
-                // Capture Overlay (Conditional)
+                // Capture Overlay
                 #[name(capture_overlay)]
                 gtk4::Overlay {
                     set_vexpand: true,
@@ -152,252 +152,12 @@ impl SimpleComponent for SettingsDialogModel {
                     set_child = &gtk4::Box {
                         set_orientation: gtk4::Orientation::Vertical,
                         
-                        gtk4::ScrolledWindow {
+                        #[name(main_notebook)]
+                        gtk4::Notebook {
                             set_vexpand: true,
                             set_hexpand: true,
-                            
-                            gtk4::Box {
-                                set_orientation: gtk4::Orientation::Vertical,
-                                set_spacing: 15,
-                                set_margin_all: 20,
-                                
-                                // --- Directory Defaults ---
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Directory Defaults (Applied to new directories)", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                },
-
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Show Archives on Top", model.language)),
-                                    #[watch]
-                                    set_active: model.archives_on_top,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateArchivesOnTop(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Default Spread View", model.language)),
-                                    #[watch]
-                                    set_active: model.default_spread_view,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateDefaultSpread(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Default Right to Left", model.language)),
-                                    #[watch]
-                                    set_active: model.default_right_to_left,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateDefaultRTL(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    set_spacing: 10,
-                                    
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Default Dir Sort:", model.language),
-                                    },
-                                    
-                                    #[name(dir_sort_combo)]
-                                    gtk4::ComboBoxText {
-                                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
-                                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
-                                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
-                                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
-                                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
-                                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
-                                        #[watch]
-                                        set_active_id: Some(match model.default_dir_sort {
-                                            SortType::NameAsc => "NameAsc",
-                                            SortType::NameDesc => "NameDesc",
-                                            SortType::DateAsc => "DateAsc",
-                                            SortType::DateDesc => "DateDesc",
-                                            SortType::SizeAsc => "SizeAsc",
-                                            SortType::SizeDesc => "SizeDesc",
-                                        }),
-                                        connect_changed[sender] => move |cb| {
-                                            if let Some(id) = cb.active_id() {
-                                                let sort = match id.as_str() {
-                                                    "NameAsc" => SortType::NameAsc,
-                                                    "NameDesc" => SortType::NameDesc,
-                                                    "DateAsc" => SortType::DateAsc,
-                                                    "DateDesc" => SortType::DateDesc,
-                                                    "SizeAsc" => SortType::SizeAsc,
-                                                    "SizeDesc" => SortType::SizeDesc,
-                                                    _ => SortType::NameAsc,
-                                                };
-                                                sender.input(SettingsDialogMsg::UpdateDefaultDirSort(sort));
-                                            }
-                                        }
-                                    },
-                                },
-        
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    set_spacing: 10,
-                                    
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Default Image Sort:", model.language),
-                                    },
-                                     #[name(image_sort_combo)]
-                                     gtk4::ComboBoxText {
-                                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
-                                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
-                                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
-                                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
-                                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
-                                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
-                                        #[watch]
-                                        set_active_id: Some(match model.default_image_sort {
-                                            SortType::NameAsc => "NameAsc",
-                                            SortType::NameDesc => "NameDesc",
-                                            SortType::DateAsc => "DateAsc",
-                                            SortType::DateDesc => "DateDesc",
-                                            SortType::SizeAsc => "SizeAsc",
-                                            SortType::SizeDesc => "SizeDesc",
-                                        }),
-                                        connect_changed[sender] => move |cb| {
-                                            if let Some(id) = cb.active_id() {
-                                                let sort = match id.as_str() {
-                                                    "NameAsc" => SortType::NameAsc,
-                                                    "NameDesc" => SortType::NameDesc,
-                                                    "DateAsc" => SortType::DateAsc,
-                                                    "DateDesc" => SortType::DateDesc,
-                                                    "SizeAsc" => SortType::SizeAsc,
-                                                    "SizeDesc" => SortType::SizeDesc,
-                                                    _ => SortType::NameAsc,
-                                                };
-                                                sender.input(SettingsDialogMsg::UpdateDefaultImageSort(sort));
-                                            }
-                                        }
-                                    },
-                                },
-                                
-                                gtk4::Separator {},
-        
-                                // --- Application Settings ---
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Application Settings", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                },
-                                
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    set_spacing: 10,
-                                    
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Language", model.language),
-                                    },
-
-                                    gtk4::ComboBoxText {
-                                        append: (Some("English"), "English"),
-                                        append: (Some("Japanese"), "日本語"),
-                                        #[watch]
-                                        set_active_id: Some(match model.language {
-                                            Language::English => "English",
-                                            Language::Japanese => "Japanese",
-                                        }),
-                                        connect_changed[sender] => move |cb| {
-                                            if let Some(id) = cb.active_id() {
-                                                let lang = match id.as_str() {
-                                                    "English" => Language::English,
-                                                    "Japanese" => Language::Japanese,
-                                                    _ => Language::English,
-                                                };
-                                                sender.input(SettingsDialogMsg::UpdateLanguage(lang));
-                                            }
-                                        }
-                                    },
-                                },
-
-                                gtk4::CheckButton {
-                                    #[watch]
-                                    set_label: Some(&localize("Dark Mode (Requires Restart)", model.language)),
-                                    #[watch]
-                                    set_active: model.dark_mode,
-                                    connect_toggled[sender] => move |btn| {
-                                        sender.input(SettingsDialogMsg::UpdateDarkMode(btn.is_active()));
-                                    }
-                                },
-                                
-                                gtk4::CheckButton {
-                                     #[watch]
-                                     set_label: Some(&localize("Loop Images (at end of list)", model.language)),
-                                     #[watch]
-                                     set_active: model.loop_images,
-                                     connect_toggled[sender] => move |btn| {
-                                         sender.input(SettingsDialogMsg::UpdateLoopImages(btn.is_active()));
-                                     }
-                                },
-        
-                                gtk4::CheckButton {
-                                     #[watch]
-                                     set_label: Some(&localize("Single Page for First Image (Spread View)", model.language)),
-                                     #[watch]
-                                     set_active: model.single_first_page,
-                                     connect_toggled[sender] => move |btn| {
-                                         sender.input(SettingsDialogMsg::UpdateSingleFirstPage(btn.is_active()));
-                                     }
-                                },
-                                
-                                gtk4::Separator {},
-                                
-                                // --- Input Settings ---
-                                gtk4::Box {
-                                    set_orientation: gtk4::Orientation::Horizontal,
-                                    gtk4::Label {
-                                        #[watch]
-                                        set_label: &localize("Input Configuration", model.language),
-                                        set_xalign: 0.0,
-                                        set_hexpand: true,
-                                        add_css_class: "title-4",
-                                    },
-                                    gtk4::Button {
-                                        #[watch]
-                                        set_label: &localize("Reset to Defaults", model.language),
-                                        connect_clicked => SettingsDialogMsg::ResetInputs,
-                                    }
-                                },
-                                
-                                // Keyboard Section
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Keyboard Shortcuts", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                    set_margin_top: 10,
-                                },
-
-                                #[local_ref]
-                                keyboard_list -> gtk4::ListBox,
-
-                                // Mouse Section
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &localize("Mouse Configuration", model.language),
-                                    set_xalign: 0.0,
-                                    add_css_class: "title-4",
-                                    set_margin_top: 10,
-                                },
-
-                                #[local_ref]
-                                mouse_list -> gtk4::ListBox,
-                            }
                         },
+
                         // Footer
                         gtk4::Box {
                             set_orientation: gtk4::Orientation::Horizontal,
@@ -419,11 +179,277 @@ impl SimpleComponent for SettingsDialogModel {
                             }
                         }
                     }
-                    }
-
                 }
             }
+        },
+
+        #[name(tab_directory)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+                
+                gtk4::Label {
+                    #[watch]
+                    set_label: &localize("Directory Defaults (Applied to new directories)", model.language),
+                    set_xalign: 0.0,
+                    add_css_class: "title-4",
+                },
+
+                gtk4::CheckButton {
+                    #[watch]
+                    set_label: Some(&localize("Show Archives on Top", model.language)),
+                    #[watch]
+                    set_active: model.archives_on_top,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(SettingsDialogMsg::UpdateArchivesOnTop(btn.is_active()));
+                    }
+                },
+                
+                gtk4::CheckButton {
+                    #[watch]
+                    set_label: Some(&localize("Default Spread View", model.language)),
+                    #[watch]
+                    set_active: model.default_spread_view,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(SettingsDialogMsg::UpdateDefaultSpread(btn.is_active()));
+                    }
+                },
+                
+                gtk4::CheckButton {
+                    #[watch]
+                    set_label: Some(&localize("Default Right to Left", model.language)),
+                    #[watch]
+                    set_active: model.default_right_to_left,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(SettingsDialogMsg::UpdateDefaultRTL(btn.is_active()));
+                    }
+                },
+                
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    set_spacing: 10,
+                    
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Default Dir Sort:", model.language),
+                    },
+                    
+                    #[name(dir_sort_combo)]
+                    gtk4::ComboBoxText {
+                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
+                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
+                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
+                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
+                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
+                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
+                        #[watch]
+                        set_active_id: Some(match model.default_dir_sort {
+                            SortType::NameAsc => "NameAsc",
+                            SortType::NameDesc => "NameDesc",
+                            SortType::DateAsc => "DateAsc",
+                            SortType::DateDesc => "DateDesc",
+                            SortType::SizeAsc => "SizeAsc",
+                            SortType::SizeDesc => "SizeDesc",
+                        }),
+                        connect_changed[sender] => move |cb| {
+                            if let Some(id) = cb.active_id() {
+                                let sort = match id.as_str() {
+                                    "NameAsc" => SortType::NameAsc,
+                                    "NameDesc" => SortType::NameDesc,
+                                    "DateAsc" => SortType::DateAsc,
+                                    "DateDesc" => SortType::DateDesc,
+                                    "SizeAsc" => SortType::SizeAsc,
+                                    "SizeDesc" => SortType::SizeDesc,
+                                    _ => SortType::NameAsc,
+                                };
+                                sender.input(SettingsDialogMsg::UpdateDefaultDirSort(sort));
+                            }
+                        }
+                    },
+                },
+
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    set_spacing: 10,
+                    
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Default Image Sort:", model.language),
+                    },
+                        #[name(image_sort_combo)]
+                        gtk4::ComboBoxText {
+                        append: (Some("NameAsc"), &localize("Name Asc", model.language)),
+                        append: (Some("NameDesc"), &localize("Name Desc", model.language)),
+                        append: (Some("DateAsc"), &localize("Date Asc", model.language)),
+                        append: (Some("DateDesc"), &localize("Date Desc", model.language)),
+                        append: (Some("SizeAsc"), &localize("Size Asc", model.language)),
+                        append: (Some("SizeDesc"), &localize("Size Desc", model.language)),
+                        #[watch]
+                        set_active_id: Some(match model.default_image_sort {
+                            SortType::NameAsc => "NameAsc",
+                            SortType::NameDesc => "NameDesc",
+                            SortType::DateAsc => "DateAsc",
+                            SortType::DateDesc => "DateDesc",
+                            SortType::SizeAsc => "SizeAsc",
+                            SortType::SizeDesc => "SizeDesc",
+                        }),
+                        connect_changed[sender] => move |cb| {
+                            if let Some(id) = cb.active_id() {
+                                let sort = match id.as_str() {
+                                    "NameAsc" => SortType::NameAsc,
+                                    "NameDesc" => SortType::NameDesc,
+                                    "DateAsc" => SortType::DateAsc,
+                                    "DateDesc" => SortType::DateDesc,
+                                    "SizeAsc" => SortType::SizeAsc,
+                                    "SizeDesc" => SortType::SizeDesc,
+                                    _ => SortType::NameAsc,
+                                };
+                                sender.input(SettingsDialogMsg::UpdateDefaultImageSort(sort));
+                            }
+                        }
+                    },
+                },
+            }
+        },
+
+        #[name(tab_application)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+                
+                gtk4::Label {
+                    #[watch]
+                    set_label: &localize("Application Settings", model.language),
+                    set_xalign: 0.0,
+                    add_css_class: "title-4",
+                },
+                
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    set_spacing: 10,
+                    
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Language", model.language),
+                    },
+
+                    gtk4::ComboBoxText {
+                        append: (Some("English"), "English"),
+                        append: (Some("Japanese"), "日本語"),
+                        #[watch]
+                        set_active_id: Some(match model.language {
+                            Language::English => "English",
+                            Language::Japanese => "Japanese",
+                        }),
+                        connect_changed[sender] => move |cb| {
+                            if let Some(id) = cb.active_id() {
+                                let lang = match id.as_str() {
+                                    "English" => Language::English,
+                                    "Japanese" => Language::Japanese,
+                                    _ => Language::English,
+                                };
+                                sender.input(SettingsDialogMsg::UpdateLanguage(lang));
+                            }
+                        }
+                    },
+                },
+
+                gtk4::CheckButton {
+                        #[watch]
+                        set_label: Some(&localize("Loop Images (at end of list)", model.language)),
+                        #[watch]
+                        set_active: model.loop_images,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(SettingsDialogMsg::UpdateLoopImages(btn.is_active()));
+                        }
+                },
+
+                gtk4::CheckButton {
+                        #[watch]
+                        set_label: Some(&localize("Single Page for First Image (Spread View)", model.language)),
+                        #[watch]
+                        set_active: model.single_first_page,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(SettingsDialogMsg::UpdateSingleFirstPage(btn.is_active()));
+                        }
+                },
+            }
+        },
+
+        #[name(tab_input)]
+        gtk4::ScrolledWindow {
+            set_hscrollbar_policy: gtk4::PolicyType::Never,
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                set_spacing: 15,
+                set_margin_all: 20,
+
+                gtk4::Box {
+                    set_orientation: gtk4::Orientation::Horizontal,
+                    gtk4::Label {
+                        #[watch]
+                        set_label: &localize("Input Configuration", model.language),
+                        set_xalign: 0.0,
+                        set_hexpand: true,
+                        add_css_class: "title-4",
+                    },
+                    gtk4::Button {
+                        #[watch]
+                        set_label: &localize("Reset to Defaults", model.language),
+                        connect_clicked => SettingsDialogMsg::ResetInputs,
+                    }
+                },
+                
+                // Keyboard Section
+                gtk4::Label {
+                    #[watch]
+                    set_label: &localize("Keyboard Shortcuts", model.language),
+                    set_xalign: 0.0,
+                    add_css_class: "title-4",
+                    set_margin_top: 10,
+                },
+
+                #[local_ref]
+                keyboard_list -> gtk4::ListBox,
+
+                // Mouse Section
+                gtk4::Label {
+                    #[watch]
+                    set_label: &localize("Mouse Configuration", model.language),
+                    set_xalign: 0.0,
+                    add_css_class: "title-4",
+                    set_margin_top: 10,
+                },
+
+                #[local_ref]
+                mouse_list -> gtk4::ListBox,
+            }
+        },
+        
+        #[name(label_directory)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Directory", model.language),
+        },
+        
+        #[name(label_application)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Application", model.language),
+        },
+
+        #[name(label_input)]
+        gtk4::Label {
+            #[watch]
+            set_label: &localize("Input", model.language),
         }
+    }
 
     fn init(
         _init: Self::Init,
@@ -469,6 +495,10 @@ impl SimpleComponent for SettingsDialogModel {
         let mouse_list = model.mouse_rows.widget().clone();
         let widgets = view_output!(keyboard_list, mouse_list);
         
+        widgets.main_notebook.append_page(&widgets.tab_directory, Some(&widgets.label_directory));
+        widgets.main_notebook.append_page(&widgets.tab_application, Some(&widgets.label_application));
+        widgets.main_notebook.append_page(&widgets.tab_input, Some(&widgets.label_input));
+
         // Add overlay child for capturing manually
         let capture_label = gtk4::Label::builder()
             .label("Press a key (Esc to cancel)")
@@ -580,7 +610,6 @@ impl SimpleComponent for SettingsDialogModel {
                 self.language = lang;
                 self.populate_factories();
             }
-            SettingsDialogMsg::UpdateDarkMode(val) => self.dark_mode = val,
             SettingsDialogMsg::UpdateDefaultSpread(val) => self.default_spread_view = val,
             SettingsDialogMsg::UpdateDefaultRTL(val) => self.default_right_to_left = val,
             SettingsDialogMsg::UpdateDefaultDirSort(val) => self.default_dir_sort = val,
@@ -870,7 +899,9 @@ impl FactoryComponent for MouseItem {
         match msg {
             MouseItemMsg::UpdateSetting(a) => self.current_setting = a,
             MouseItemMsg::Change(a) => {
-                 let _ = _sender.output(SettingsDialogMsg::UpdateMouseBinding(self.input_type, a));
+                 if self.current_setting != a {
+                     let _ = _sender.output(SettingsDialogMsg::UpdateMouseBinding(self.input_type, a));
+                 }
             }
         }
     }
