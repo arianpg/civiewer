@@ -307,6 +307,7 @@ impl SimpleComponent for AppModel {
             dir_sort: model.current_dir_sort,
             image_sort: model.current_image_sort,
             input_map: model.settings.input_map.clone(),
+            language: model.settings.language,
         });
         model.sidebar.emit(SidebarMsg::UpdateSpreadMode(model.spread_view));
         model.sidebar.emit(SidebarMsg::ChangeDirSort(model.current_dir_sort));
@@ -482,6 +483,7 @@ impl SimpleComponent for AppModel {
                     dir_sort: self.settings.default_dir_sort,
                     image_sort: self.settings.default_image_sort,
                     input_map: self.settings.input_map.clone(),
+                    language: self.settings.language,
                 });
                 
                 // Update Menu
@@ -689,6 +691,7 @@ impl AppModel {
                 dir_sort: self.current_dir_sort,
                 image_sort: self.current_image_sort,
                 input_map: self.settings.input_map.clone(),
+                language: self.settings.language,
              });
              self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
              self.sidebar.emit(SidebarMsg::ChangeDirSort(self.current_dir_sort));
@@ -729,6 +732,7 @@ impl AppModel {
             dir_sort: self.current_dir_sort,
             image_sort: self.current_image_sort,
             input_map: self.settings.input_map.clone(),
+            language: self.settings.language,
         });
         self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
         
@@ -761,6 +765,7 @@ impl AppModel {
              dir_sort: self.current_dir_sort,
              image_sort: self.current_image_sort,
              input_map: self.settings.input_map.clone(),
+             language: self.settings.language,
         });
         
         if let Some(path) = &self.current_image {
