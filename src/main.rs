@@ -15,7 +15,7 @@ use gtk4::gio;
 fn main() {
     let app = gtk4::Application::builder()
         .application_id("com.arianpg.civiewer")
-        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE | gio::ApplicationFlags::NON_UNIQUE)
         .build();
 
     app.connect_command_line(|app, _cmd| {
