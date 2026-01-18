@@ -85,8 +85,11 @@ impl Default for AppSettings {
     }
 }
 
+use std::time::Duration;
+use std::thread;
+
 pub struct DbHelper {
-    db: Database,
+    path: PathBuf,
 }
 
 impl DbHelper {
@@ -95,12 +98,33 @@ impl DbHelper {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let db = Database::open_file(&path)?;
-        Ok(Self { db })
+        // Test open to fail early if strictly permissions issues, 
+        // but for locking issues we want to be lenient.
+        // However, existing code expects valid DB on init.
+        // Let's just store the path.
+        Ok(Self { path })
+    }
+
+    fn get_db(&self) -> Result<Database> {
+        let mut attempts = 0;
+        loop {
+            match Database::open_file(&self.path) {
+                Ok(db) => return Ok(db),
+                Err(e) => {
+                    attempts += 1;
+                    if attempts >= 5 {
+                        return Err(anyhow::anyhow!("Failed to open DB after retries: {}", e));
+                    }
+                    eprintln!("DB locked, retrying in 100ms... (attempt {}/5)", attempts);
+                    thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
     }
 
     pub fn get_settings(&self) -> Result<AppSettings> {
-        let collection = self.db.collection::<AppSettings>("settings");
+        let db = self.get_db()?;
+        let collection = db.collection::<AppSettings>("settings");
         if let Ok(Some(settings)) = collection.find_one(polodb_core::bson::doc! { "key": "global" }) {
              Ok(settings)
         } else {
@@ -112,14 +136,15 @@ impl DbHelper {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> Result<()> {
-        let collection = self.db.collection::<AppSettings>("settings");
+        let db = self.get_db()?;
+        let collection = db.collection::<AppSettings>("settings");
         let doc = polodb_core::bson::to_document(settings)?;
         let mut update_doc = polodb_core::bson::Document::new();
         update_doc.insert("$set", doc);
 
         if let Ok(result) = collection.update_one(polodb_core::bson::doc! { "key": "global" }, update_doc) {
             if result.modified_count == 0 {
-                // Check if exists, if not insert? (Already handled by get_settings sort of, but good to be safe)
+                // Check if exists
                 if collection.find_one(polodb_core::bson::doc! { "key": "global" })?.is_none() {
                     collection.insert_one(settings.clone())?;
                 }
@@ -129,7 +154,8 @@ impl DbHelper {
     }
 
     pub fn get_app_state(&self) -> Result<AppState> {
-        let collection = self.db.collection::<AppState>("app_state");
+        let db = self.get_db()?;
+        let collection = db.collection::<AppState>("app_state");
         if let Ok(Some(state)) = collection.find_one(polodb_core::bson::doc! { "key": "global" }) {
             Ok(state)
         } else {
@@ -138,7 +164,8 @@ impl DbHelper {
     }
 
     pub fn save_app_state(&self, state: &AppState) -> Result<()> {
-         let collection = self.db.collection::<AppState>("app_state");
+         let db = self.get_db()?;
+         let collection = db.collection::<AppState>("app_state");
          let doc = polodb_core::bson::to_document(state)?;
          let mut update_doc = polodb_core::bson::Document::new();
          update_doc.insert("$set", doc);
@@ -152,7 +179,8 @@ impl DbHelper {
     }
 
     pub fn get_directory_settings(&self, path: &str) -> Result<Option<DirectorySettings>> {
-        let collection = self.db.collection::<DirectorySettings>("directory_settings");
+        let db = self.get_db()?;
+        let collection = db.collection::<DirectorySettings>("directory_settings");
         if let Ok(Some(settings)) = collection.find_one(polodb_core::bson::doc! { "path": path }) {
             Ok(Some(settings))
         } else {
@@ -161,7 +189,8 @@ impl DbHelper {
     }
 
     pub fn save_directory_settings(&self, settings: &DirectorySettings) -> Result<()> {
-        let collection = self.db.collection::<DirectorySettings>("directory_settings");
+        let db = self.get_db()?;
+        let collection = db.collection::<DirectorySettings>("directory_settings");
         let doc = polodb_core::bson::to_document(settings)?;
         let mut update_doc = polodb_core::bson::Document::new();
         update_doc.insert("$set", doc);
