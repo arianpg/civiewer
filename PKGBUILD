@@ -1,6 +1,6 @@
 # Maintainer: arianpg <programmer.arian@gmail.com>
 pkgname=civiewer
-pkgver=1.0.2
+pkgver=1.0.3
 pkgrel=1
 pkgdesc="A fast and minimal comic image viewer."
 arch=('x86_64')
