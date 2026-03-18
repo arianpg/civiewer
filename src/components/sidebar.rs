@@ -190,7 +190,6 @@ impl FactoryComponent for ImageItem {
     fn update(&mut self, msg: Self::Input, _sender: FactorySender<Self>) {
         match msg {
             ImageItemMsg::UpdateSelection(selected_path) => {
-                 let _was_selected = self.is_selected;
                  self.is_selected = selected_path.as_ref() == Some(&self.path);
             }
         }
@@ -340,7 +339,6 @@ impl SimpleComponent for SidebarModel {
                 self.preview_archive_path = None;
                 self.selected_dir_path = None;
                 let _ = _sender.output(SidebarOutput::PathChanged(self.current_path.to_string_lossy().to_string()));
-                self.refresh_view();
                 self.refresh_view();
                 // Removed eager OpenImage
             }
@@ -824,10 +822,10 @@ pub fn scan_directory_custom(
             match dir_sort {
                  SortType::NameAsc => dir_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
                  SortType::NameDesc => { dir_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); dir_entries.reverse(); },
-                 SortType::DateAsc => dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
-                 SortType::DateDesc => { dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); dir_entries.reverse(); },
-                 SortType::SizeAsc => dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
-                 SortType::SizeDesc => { dir_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); dir_entries.reverse(); },
+                 SortType::DateAsc => dir_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
+                 SortType::DateDesc => { dir_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); dir_entries.reverse(); },
+                 SortType::SizeAsc => dir_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
+                 SortType::SizeDesc => { dir_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); dir_entries.reverse(); },
             }
             // Then stable sort by is_archive vs is_dir based on setting
             if archives_on_top {
@@ -854,10 +852,10 @@ pub fn scan_directory_custom(
             match image_sort {
                  SortType::NameAsc => img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)),
                  SortType::NameDesc => { img_entries.sort_by(|a, b| natural_lexical_cmp(&a.0, &b.0)); img_entries.reverse(); },
-                 SortType::DateAsc => img_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
-                 SortType::DateDesc => { img_entries.sort_by_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); img_entries.reverse(); },
-                 SortType::SizeAsc => img_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
-                 SortType::SizeDesc => { img_entries.sort_by_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); img_entries.reverse(); },
+                 SortType::DateAsc => img_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()),
+                 SortType::DateDesc => { img_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).and_then(|m| m.modified()).ok()); img_entries.reverse(); },
+                 SortType::SizeAsc => img_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)),
+                 SortType::SizeDesc => { img_entries.sort_by_cached_key(|a| std::fs::metadata(&a.1).map(|m| m.len()).unwrap_or(0)); img_entries.reverse(); },
             }
         }
         (dir_entries, img_entries)
