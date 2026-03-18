@@ -9,3 +9,4 @@ Categories=Graphics;Viewer;
 Keywords=comic;image;viewer;manga;
 MimeType=application/zip;application/x-cbz;
 StartupNotify=true
+StartupWMClass=civiewer

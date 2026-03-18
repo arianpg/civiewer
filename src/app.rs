@@ -588,13 +588,18 @@ impl SimpleComponent for AppModel {
                 self.current_image_sort = sort;
                 if let Some(path) = &self.last_path {
                      if let Some(helper) = &self.db_helper {
-                         let ds = DirectorySettings {
-                             path: path.clone(),
-                             spread_view: self.spread_view,
-                             right_to_left: self.right_to_left,
-                             dir_sort: self.current_dir_sort,
-                             image_sort: self.current_image_sort,
+                         let mut ds = if let Ok(Some(existing)) = helper.get_directory_settings(path) {
+                             existing
+                         } else {
+                             DirectorySettings {
+                                 path: path.clone(),
+                                 spread_view: self.settings.default_spread_view,
+                                 right_to_left: self.settings.default_right_to_left,
+                                 dir_sort: self.settings.default_dir_sort,
+                                 image_sort: self.settings.default_image_sort,
+                             }
                          };
+                         ds.image_sort = self.current_image_sort;
                          let _ = helper.save_directory_settings(&ds);
                      }
                 }
@@ -711,18 +716,23 @@ impl AppModel {
 
     fn handle_spread_mode_changed(&mut self, val: bool) {
         self.spread_view = val;
-        
+
         // Save directory settings
         if let Some(helper) = &self.db_helper {
              if let Some(path) = &self.last_path {
-                 let ds = crate::database::DirectorySettings {
-                     path: path.clone(),
-                     spread_view: self.spread_view,
-                     right_to_left: self.right_to_left,
-                     dir_sort: self.current_dir_sort,
-                     image_sort: self.current_image_sort,
-                  };
-                   let _ = helper.save_directory_settings(&ds);
+                 let mut ds = if let Ok(Some(existing)) = helper.get_directory_settings(path) {
+                     existing
+                 } else {
+                     crate::database::DirectorySettings {
+                         path: path.clone(),
+                         spread_view: self.settings.default_spread_view,
+                         right_to_left: self.settings.default_right_to_left,
+                         dir_sort: self.settings.default_dir_sort,
+                         image_sort: self.settings.default_image_sort,
+                     }
+                 };
+                 ds.spread_view = self.spread_view;
+                 let _ = helper.save_directory_settings(&ds);
             }
         }
         
@@ -749,14 +759,19 @@ impl AppModel {
         self.right_to_left = val;
         if let Some(helper) = &self.db_helper {
              if let Some(path_str) = &self.last_path {
-                  let ds = crate::database::DirectorySettings {
-                     path: path_str.clone(),
-                     spread_view: self.spread_view,
-                     right_to_left: self.right_to_left,
-                     dir_sort: self.current_dir_sort,
-                     image_sort: self.current_image_sort,
-                  };
-                   let _ = helper.save_directory_settings(&ds);
+                 let mut ds = if let Ok(Some(existing)) = helper.get_directory_settings(path_str) {
+                     existing
+                 } else {
+                     crate::database::DirectorySettings {
+                         path: path_str.clone(),
+                         spread_view: self.settings.default_spread_view,
+                         right_to_left: self.settings.default_right_to_left,
+                         dir_sort: self.settings.default_dir_sort,
+                         image_sort: self.settings.default_image_sort,
+                     }
+                 };
+                 ds.right_to_left = self.right_to_left;
+                 let _ = helper.save_directory_settings(&ds);
              }
         }
         self.image_view.emit(ImageViewMsg::UpdateSettings { 

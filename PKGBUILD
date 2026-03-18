@@ -21,7 +21,7 @@ build() {
 package() {
     cd "$startdir"
     install -Dm755 target/release/civiewer "$pkgdir/usr/bin/$pkgname"
-    install -Dm644 assets/civiewer.desktop "$pkgdir/usr/share/applications/$pkgname.desktop"
+    install -Dm644 assets/com.arianpg.civiewer.desktop "$pkgdir/usr/share/applications/com.arianpg.civiewer.desktop"
     install -Dm644 assets/hicolor/scalable/apps/com.arianpg.civiewer.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.arianpg.civiewer.svg"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 ThirdPartyNotices.txt "$pkgdir/usr/share/licenses/$pkgname/ThirdPartyNotices.txt"
