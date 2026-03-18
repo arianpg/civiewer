@@ -312,26 +312,36 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                        model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_even.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                         model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: if model.spread_mode && model.textures_even.len() > 1 {
-                                         true 
+                                         true
                                     } else {
                                          !model.textures_even.is_empty()
                                     }
                                 },
-                                
+
                                 append = &gtk4::Picture {
                                     #[watch]
-                                    set_halign: if model.is_fit_to_window { 
+                                    set_halign: if model.is_fit_to_window {
                                         if model.spread_mode { gtk4::Align::Start } else { gtk4::Align::Fill }
                                     } else { gtk4::Align::Center },
                                     #[watch]
@@ -349,14 +359,24 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                        model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_even.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                         model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: model.spread_mode && model.textures_even.len() > 1,
@@ -451,26 +471,36 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                        model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_odd.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                         model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: if model.spread_mode && model.textures_odd.len() > 1 {
-                                         true 
+                                         true
                                     } else {
                                          !model.textures_odd.is_empty()
                                     }
                                 },
-                                
+
                                 append = &gtk4::Picture {
                                     #[watch]
-                                    set_halign: if model.is_fit_to_window { 
+                                    set_halign: if model.is_fit_to_window {
                                         if model.spread_mode { gtk4::Align::Start } else { gtk4::Align::Fill }
                                     } else { gtk4::Align::Center },
                                     #[watch]
@@ -488,14 +518,24 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                        model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_odd.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                         model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: model.spread_mode && model.textures_odd.len() > 1,
@@ -916,16 +956,15 @@ impl ImageViewModel {
         
         // Simulating the layout logic for spread/single to determine total content size
         if self.spread_mode && textures.len() > 1 {
-             // For spread mode with >1 image, we display 2 images side-by-side
-             // Width is sum of 2, Height is max of 2
-             if let Some(t1) = textures.get(0) {
-                 total_w += t1.intrinsic_width() as f64;
-                 max_h = max_h.max(t1.intrinsic_height() as f64);
-             }
-             if let Some(t2) = textures.get(1) {
-                 total_w += t2.intrinsic_width() as f64;
-                 max_h = max_h.max(t2.intrinsic_height() as f64);
-             }
+             // Normalize both images to the same height so zoom is applied uniformly
+             let t1_w = textures.get(0).map_or(0, |t| t.intrinsic_width()) as f64;
+             let t1_h = textures.get(0).map_or(0, |t| t.intrinsic_height()) as f64;
+             let t2_w = textures.get(1).map_or(0, |t| t.intrinsic_width()) as f64;
+             let t2_h = textures.get(1).map_or(0, |t| t.intrinsic_height()) as f64;
+             max_h = t1_h.max(t2_h);
+             let norm_w1 = if t1_h > 0.0 { t1_w * max_h / t1_h } else { t1_w };
+             let norm_w2 = if t2_h > 0.0 { t2_w * max_h / t2_h } else { t2_w };
+             total_w = norm_w1 + norm_w2;
         } else {
              // Single image
              if let Some(t) = textures.get(0) {
