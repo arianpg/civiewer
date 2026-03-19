@@ -5,11 +5,27 @@ use crate::database::SortType;
 use crate::input_settings::{InputMap, Action, ScrollDirection};
 use crate::i18n::Language;
 
+pub struct AnimFrame {
+    pub rgba: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub delay_ms: u32,
+}
+
+impl std::fmt::Debug for AnimFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnimFrame")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("delay_ms", &self.delay_ms)
+            .finish()
+    }
+}
+
 #[derive(Debug)]
 pub enum LoadedImageSource {
     TextureBytes(Vec<u8>),
-    AnimPath(PathBuf),
-    AnimTemp(tempfile::NamedTempFile),
+    AnimFrames(Vec<AnimFrame>),
     Error,
 }
 
@@ -25,13 +41,17 @@ pub struct ImageViewModel {
     pub dir_sort: SortType,
     pub image_sort: SortType,
     pub is_fullscreen: bool,
-    temp_files_even: Vec<tempfile::NamedTempFile>,
-    temp_files_odd: Vec<tempfile::NamedTempFile>,
+    anim_data: std::collections::HashMap<(usize, u32), Vec<(gtk4::gdk::Texture, u32)>>,
     pub input_map: InputMap,
     pub language: Language,
     generation: u32,
     visible_generation: u32,
     viewport_size: (f64, f64),
+    // Stored DropDown widgets and flags for blocking feedback from programmatic set_selected calls.
+    dir_sort_dropdown: Option<gtk4::DropDown>,
+    img_sort_dropdown: Option<gtk4::DropDown>,
+    programmatic_dir_change: std::rc::Rc<std::cell::Cell<bool>>,
+    programmatic_img_change: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 #[derive(Debug)]
@@ -46,7 +66,7 @@ pub enum ImageViewMsg {
     ToggleSpread,
     ToggleDirection,
     UpdateFullscreen(bool),
-    LoadFallback(usize, PathBuf, Option<PathBuf>, u32),
+    AdvanceAnimFrame { slot_index: usize, generation: u32, next_frame_index: usize },
     TriggerAction(Action),
     MouseInput { button: u32, modifiers: u32, n_press: i32 },
     ScrollInput { dy: f64, modifiers: u32 },
@@ -126,76 +146,24 @@ impl SimpleComponent for ImageViewModel {
                         set_label: "Dir Sort:",
                     },
                     
+                    #[name(dir_sort_dropdown)]
                     gtk4::DropDown {
                         set_model: Some(&gtk4::StringList::new(&[
                             "Name Asc", "Name Desc", "Date Asc", "Date Desc", "Size Asc", "Size Desc"
                         ])),
                         set_focusable: false,
-                        #[watch]
-                        set_selected: match model.dir_sort {
-                            SortType::NameAsc => 0,
-                            SortType::NameDesc => 1,
-                            SortType::DateAsc => 2,
-                            SortType::DateDesc => 3,
-                            SortType::SizeAsc => 4,
-                            SortType::SizeDesc => 5,
-                        },
-                        connect_selected_notify[sender] => move |dd| {
-                            let sort = match dd.selected() {
-                                0 => SortType::NameAsc,
-                                1 => SortType::NameDesc,
-                                2 => SortType::DateAsc,
-                                3 => SortType::DateDesc,
-                                4 => SortType::SizeAsc,
-                                5 => SortType::SizeDesc,
-                                _ => SortType::NameAsc,
-                            };
-                             sender.input(ImageViewMsg::ChangeDirSort(sort));
-                             // Clear focus to return control to the window/view
-                             if let Some(root) = dd.root() {
-                                if let Ok(window) = root.downcast::<gtk4::Window>() {
-                                    gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
-                                }
-                            }
-                        }
                     },
                     
                     gtk4::Label {
                         set_label: "Img Sort:",
                     },
                     
+                    #[name(img_sort_dropdown)]
                     gtk4::DropDown {
                         set_model: Some(&gtk4::StringList::new(&[
                             "Name Asc", "Name Desc", "Date Asc", "Date Desc", "Size Asc", "Size Desc"
                         ])),
                         set_focusable: false,
-                        #[watch]
-                        set_selected: match model.image_sort {
-                            SortType::NameAsc => 0,
-                            SortType::NameDesc => 1,
-                            SortType::DateAsc => 2,
-                            SortType::DateDesc => 3,
-                            SortType::SizeAsc => 4,
-                            SortType::SizeDesc => 5,
-                        },
-                        connect_selected_notify[sender] => move |dd| {
-                             let sort = match dd.selected() {
-                                0 => SortType::NameAsc,
-                                1 => SortType::NameDesc,
-                                2 => SortType::DateAsc,
-                                3 => SortType::DateDesc,
-                                4 => SortType::SizeAsc,
-                                5 => SortType::SizeDesc,
-                                _ => SortType::NameAsc,
-                            };
-                            sender.input(ImageViewMsg::ChangeImageSort(sort));
-                             // Clear focus to return control to the window/view
-                             if let Some(root) = dd.root() {
-                                if let Ok(window) = root.downcast::<gtk4::Window>() {
-                                    gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
-                                }
-                            }
-                        }
                     },
                 },
             },
@@ -297,26 +265,36 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                        model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_even.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                         model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 1 } else { 0 };
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: if model.spread_mode && model.textures_even.len() > 1 {
-                                         true 
+                                         true
                                     } else {
                                          !model.textures_even.is_empty()
                                     }
                                 },
-                                
+
                                 append = &gtk4::Picture {
                                     #[watch]
-                                    set_halign: if model.is_fit_to_window { 
+                                    set_halign: if model.is_fit_to_window {
                                         if model.spread_mode { gtk4::Align::Start } else { gtk4::Align::Fill }
                                     } else { gtk4::Align::Center },
                                     #[watch]
@@ -334,14 +312,24 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                        model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_even.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                         model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_even.len() > 1 {
+                                            let max_h = model.textures_even.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_even.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_even.len() > 1 && model.right_to_left { 0 } else { 1 };
+                                            model.textures_even.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: model.spread_mode && model.textures_even.len() > 1,
@@ -436,26 +424,36 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                        model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_odd.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
-                                         model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 1 } else { 0 };
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: if model.spread_mode && model.textures_odd.len() > 1 {
-                                         true 
+                                         true
                                     } else {
                                          !model.textures_odd.is_empty()
                                     }
                                 },
-                                
+
                                 append = &gtk4::Picture {
                                     #[watch]
-                                    set_halign: if model.is_fit_to_window { 
+                                    set_halign: if model.is_fit_to_window {
                                         if model.spread_mode { gtk4::Align::Start } else { gtk4::Align::Fill }
                                     } else { gtk4::Align::Center },
                                     #[watch]
@@ -473,14 +471,24 @@ impl SimpleComponent for ImageViewModel {
                                     #[watch]
                                     set_can_shrink: true,
                                     #[watch]
-                                    set_width_request: if model.is_fit_to_window { -1 } else { 
+                                    set_width_request: if model.is_fit_to_window { -1 } else {
                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                        model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32) 
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            model.textures_odd.get(idx).map_or(-1, |t| { let h = t.intrinsic_height() as f64; if h > 0.0 { (t.intrinsic_width() as f64 * max_h / h * model.zoom) as i32 } else { -1 } })
+                                        } else {
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_width() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
-                                    set_height_request: if model.is_fit_to_window { -1 } else { 
-                                         let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
-                                         model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                    set_height_request: if model.is_fit_to_window { -1 } else {
+                                        if model.spread_mode && model.textures_odd.len() > 1 {
+                                            let max_h = model.textures_odd.get(0).map_or(0, |t| t.intrinsic_height()).max(model.textures_odd.get(1).map_or(0, |t| t.intrinsic_height())) as f64;
+                                            (max_h * model.zoom) as i32
+                                        } else {
+                                            let idx = if model.spread_mode && model.textures_odd.len() > 1 && model.right_to_left { 0 } else { 1 };
+                                            model.textures_odd.get(idx).map_or(-1, |t| (t.intrinsic_height() as f64 * model.zoom) as i32)
+                                        }
                                     },
                                     #[watch]
                                     set_visible: model.spread_mode && model.textures_odd.len() > 1,
@@ -498,7 +506,7 @@ impl SimpleComponent for ImageViewModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ImageViewModel {
+        let mut model = ImageViewModel {
             current_paths: Vec::new(),
             textures_even: Vec::new(),
             textures_odd: Vec::new(),
@@ -509,13 +517,16 @@ impl SimpleComponent for ImageViewModel {
             dir_sort: SortType::NameAsc,
             image_sort: SortType::NameAsc,
             is_fullscreen: false,
-            temp_files_even: Vec::new(),
-            temp_files_odd: Vec::new(),
+            anim_data: std::collections::HashMap::new(),
             input_map: InputMap::default(),
             language: Language::default(),
             generation: 0,
             visible_generation: 0,
             viewport_size: (0.0, 0.0),
+            dir_sort_dropdown: None,
+            img_sort_dropdown: None,
+            programmatic_dir_change: std::rc::Rc::new(std::cell::Cell::new(false)),
+            programmatic_img_change: std::rc::Rc::new(std::cell::Cell::new(false)),
         };
         
         let drag_state = std::rc::Rc::new(std::cell::RefCell::new((0.0, 0.0)));
@@ -526,6 +537,55 @@ impl SimpleComponent for ImageViewModel {
         let drag_state_odd_2 = drag_state_odd.clone();
         
         let widgets = view_output!();
+
+        // Connect DropDown signals manually so we can skip callbacks during programmatic changes.
+        {
+            let flag = model.programmatic_dir_change.clone();
+            let sender_dd = sender.clone();
+            widgets.dir_sort_dropdown.connect_selected_notify(move |dd| {
+                if flag.get() { return; }
+                let sort = match dd.selected() {
+                    0 => SortType::NameAsc,
+                    1 => SortType::NameDesc,
+                    2 => SortType::DateAsc,
+                    3 => SortType::DateDesc,
+                    4 => SortType::SizeAsc,
+                    5 => SortType::SizeDesc,
+                    _ => SortType::NameAsc,
+                };
+                sender_dd.input(ImageViewMsg::ChangeDirSort(sort));
+                if let Some(root) = dd.root() {
+                    if let Ok(window) = root.downcast::<gtk4::Window>() {
+                        gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
+                    }
+                }
+            });
+            model.dir_sort_dropdown = Some(widgets.dir_sort_dropdown.clone());
+        }
+        {
+            let flag = model.programmatic_img_change.clone();
+            let sender_dd = sender.clone();
+            widgets.img_sort_dropdown.connect_selected_notify(move |dd| {
+                if flag.get() { return; }
+                let sort = match dd.selected() {
+                    0 => SortType::NameAsc,
+                    1 => SortType::NameDesc,
+                    2 => SortType::DateAsc,
+                    3 => SortType::DateDesc,
+                    4 => SortType::SizeAsc,
+                    5 => SortType::SizeDesc,
+                    _ => SortType::NameAsc,
+                };
+                sender_dd.input(ImageViewMsg::ChangeImageSort(sort));
+                if let Some(root) = dd.root() {
+                    if let Ok(window) = root.downcast::<gtk4::Window>() {
+                        gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
+                    }
+                }
+            });
+            model.img_sort_dropdown = Some(widgets.img_sort_dropdown.clone());
+        }
+
         {
             let sender = sender.clone();
             let mut child = widgets.main_stack.first_child();
@@ -573,11 +633,12 @@ impl SimpleComponent for ImageViewModel {
                    let is_even = current_gen % 2 == 0;
                    if is_even {
                        self.textures_even.clear();
-                       self.temp_files_even.clear();
                    } else {
                        self.textures_odd.clear();
-                       self.temp_files_odd.clear();
                    }
+                   // Remove anim_data for generations no longer displayed
+                   let vg = self.visible_generation;
+                   self.anim_data.retain(|(_, g), _| *g == vg);
                    
                    if paths.is_empty() {
                        self.visible_generation = current_gen;
@@ -601,11 +662,17 @@ impl SimpleComponent for ImageViewModel {
                                     false
                                 });
 
-                                if is_anim {
-                                     found_source = LoadedImageSource::AnimPath(path.clone());
-                                } else {
-                                    if let Ok(bytes) = std::fs::read(path) {
-                                        found_source = LoadedImageSource::TextureBytes(bytes);
+                                if let Ok(data) = std::fs::read(path) {
+                                    if is_anim {
+                                        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                                        let frames = decode_anim_frames(&data, &ext);
+                                        if !frames.is_empty() {
+                                            found_source = LoadedImageSource::AnimFrames(frames);
+                                        } else {
+                                            found_source = LoadedImageSource::TextureBytes(data);
+                                        }
+                                    } else {
+                                        found_source = LoadedImageSource::TextureBytes(data);
                                     }
                                 }
                             }
@@ -632,22 +699,21 @@ impl SimpleComponent for ImageViewModel {
                                                                  use std::io::Read;
                                                                  let mut buffer = Vec::new();
                                                                  if entry.read_to_end(&mut buffer).is_ok() {
-                                                                     let glib_bytes = gtk4::glib::Bytes::from(&buffer);
                                                                      let is_anim = path.extension().and_then(|s| s.to_str()).map_or(false, |ext| {
                                                                          let ext = ext.to_lowercase();
                                                                          if ext == "gif" || ext == "apng" { return true; }
-                                                                         if ext == "webp" { return crate::utils::is_animated_webp_bytes(&glib_bytes); }
-                                                                         if ext == "png" { return crate::utils::is_apng_bytes(&glib_bytes); }
+                                                                         if ext == "webp" { return crate::utils::is_animated_webp_bytes(&buffer); }
+                                                                         if ext == "png" { return crate::utils::is_apng_bytes(&buffer); }
                                                                          false
                                                                      });
 
                                                                      if is_anim {
-                                                                         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("tmp");
-                                                                         if let Ok(mut temp_file) = tempfile::Builder::new().suffix(&format!(".{}", ext)).tempfile() {
-                                                                             use std::io::Write;
-                                                                             if temp_file.write_all(&buffer).is_ok() {
-                                                                                 found_source = LoadedImageSource::AnimTemp(temp_file);
-                                                                             }
+                                                                         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                                                                         let frames = decode_anim_frames(&buffer, &ext);
+                                                                         if !frames.is_empty() {
+                                                                             found_source = LoadedImageSource::AnimFrames(frames);
+                                                                         } else {
+                                                                             found_source = LoadedImageSource::TextureBytes(buffer);
                                                                          }
                                                                      } else {
                                                                          found_source = LoadedImageSource::TextureBytes(buffer);
@@ -678,10 +744,10 @@ impl SimpleComponent for ImageViewModel {
                   let is_even = generation % 2 == 0;
 
                   // Helper to push to correct vector
-                  let (textures, temp_files) = if is_even {
-                      (&mut self.textures_even, &mut self.temp_files_even)
+                  let textures = if is_even {
+                      &mut self.textures_even
                   } else {
-                      (&mut self.textures_odd, &mut self.temp_files_odd)
+                      &mut self.textures_odd
                   };
 
                   match source {
@@ -691,43 +757,47 @@ impl SimpleComponent for ImageViewModel {
                               textures.push(texture.upcast());
                           }
                       }
-                      LoadedImageSource::AnimPath(p) => {
-                           let file = gtk4::gio::File::for_path(&p);
-                           let media = gtk4::MediaFile::for_file(&file);
-                           media.set_loop(true);
-                           media.play();
-                           let sender_clone = _sender.clone();
-                           let idx = textures.len();
-                           let p_clone = p.clone();
-                           let gen = generation;
-                           media.connect_notify(Some("error"), move |_, _| {
-                               sender_clone.input(ImageViewMsg::LoadFallback(idx, p_clone.clone(), None, gen));
-                           });
-                           textures.push(media.upcast());
+                      LoadedImageSource::AnimFrames(frames) if !frames.is_empty() => {
+                          // Convert all frames to GDK textures on the main thread
+                          let gdk_frames: Vec<(gtk4::gdk::Texture, u32)> = frames.iter().filter_map(|f| {
+                              let bytes = gtk4::glib::Bytes::from(&f.rgba);
+                              let texture = gtk4::gdk::MemoryTexture::new(
+                                  f.width as i32,
+                                  f.height as i32,
+                                  gtk4::gdk::MemoryFormat::R8g8b8a8,
+                                  &bytes,
+                                  (f.width * 4) as usize,
+                              );
+                              Some((texture.upcast::<gtk4::gdk::Texture>(), f.delay_ms))
+                          }).collect();
+
+                          if gdk_frames.is_empty() { return; }
+
+                          let slot_index = textures.len();
+                          textures.push(gdk_frames[0].0.clone().upcast::<gtk4::gdk::Paintable>());
+
+                          if gdk_frames.len() > 1 {
+                              let delay_ms = gdk_frames[0].1;
+                              self.anim_data.insert((slot_index, generation), gdk_frames);
+                              let sender_clone = _sender.clone();
+                              gtk4::glib::timeout_add_local(
+                                  std::time::Duration::from_millis(delay_ms as u64),
+                                  move || {
+                                      sender_clone.input(ImageViewMsg::AdvanceAnimFrame {
+                                          slot_index,
+                                          generation,
+                                          next_frame_index: 1,
+                                      });
+                                      gtk4::glib::ControlFlow::Break
+                                  },
+                              );
+                          }
                       }
-                      LoadedImageSource::AnimTemp(temp_file) => {
-                           let temp_path = temp_file.path().to_path_buf();
-                           let media = gtk4::MediaFile::for_filename(temp_path.to_str().unwrap_or(""));
-                           media.set_loop(true);
-                           media.play();
-                           
-                           let sender_clone = _sender.clone();
-                           let idx = textures.len();
-                           let p_clone = path.clone();
-                           let temp_path_clone = temp_path.clone();
-                           let gen = generation;
-                           media.connect_notify(Some("error"), move |_, _| {
-                               sender_clone.input(ImageViewMsg::LoadFallback(idx, p_clone.clone(), Some(temp_path_clone.clone()), gen));
-                           });
-                           
-                           textures.push(media.upcast());
-                           temp_files.push(temp_file);
-                      }
-                      LoadedImageSource::Error => {
+                      LoadedImageSource::AnimFrames(_) | LoadedImageSource::Error => {
                           if path.exists() {
-                                if let Ok(texture) = gtk4::gdk::Texture::from_file(&gtk4::gio::File::for_path(&path)) {
-                                    textures.push(texture.upcast());
-                                }
+                              if let Ok(texture) = gtk4::gdk::Texture::from_file(&gtk4::gio::File::for_path(&path)) {
+                                  textures.push(texture.upcast());
+                              }
                           }
                       }
                   }
@@ -776,6 +846,38 @@ impl SimpleComponent for ImageViewModel {
                   self.zoom = 1.0;
               }
               ImageViewMsg::UpdateSettings { spread_mode, right_to_left, dir_sort, image_sort, input_map, language } => {
+                  // Update dropdowns with flag set to suppress the synchronous notify::selected
+                  // callback that GTK4 fires when set_selected changes the value.
+                  if dir_sort != self.dir_sort {
+                      let idx = match dir_sort {
+                          SortType::NameAsc => 0u32,
+                          SortType::NameDesc => 1,
+                          SortType::DateAsc => 2,
+                          SortType::DateDesc => 3,
+                          SortType::SizeAsc => 4,
+                          SortType::SizeDesc => 5,
+                      };
+                      if let Some(ref dd) = self.dir_sort_dropdown {
+                          self.programmatic_dir_change.set(true);
+                          dd.set_selected(idx);
+                          self.programmatic_dir_change.set(false);
+                      }
+                  }
+                  if image_sort != self.image_sort {
+                      let idx = match image_sort {
+                          SortType::NameAsc => 0u32,
+                          SortType::NameDesc => 1,
+                          SortType::DateAsc => 2,
+                          SortType::DateDesc => 3,
+                          SortType::SizeAsc => 4,
+                          SortType::SizeDesc => 5,
+                      };
+                      if let Some(ref dd) = self.img_sort_dropdown {
+                          self.programmatic_img_change.set(true);
+                          dd.set_selected(idx);
+                          self.programmatic_img_change.set(false);
+                      }
+                  }
                   self.spread_mode = spread_mode;
                   self.right_to_left = right_to_left;
                   self.dir_sort = dir_sort;
@@ -806,24 +908,35 @@ impl SimpleComponent for ImageViewModel {
                ImageViewMsg::UpdateFullscreen(val) => {
                    self.is_fullscreen = val;
                }
-               ImageViewMsg::LoadFallback(index, path, fallback_path, generation) => {
-                   let textures = if generation % 2 == 0 { &mut self.textures_even } else { &mut self.textures_odd };
-                   
-                   if let Some(texture) = textures.get_mut(index) {
-                       let path_to_load = if let Some(p) = fallback_path {
-                           if p.exists() { Some(p) } else { None } 
-                       } else if path.exists() {
-                           Some(path.clone())
-                       } else {
-                           None
-                       };
-
-                       if let Some(p) = path_to_load {
-                            if let Ok(new_texture) = gtk4::gdk::Texture::from_file(&gtk4::gio::File::for_path(&p)) {
-                                *texture = new_texture.upcast();
-                            }
-                       }
+               ImageViewMsg::AdvanceAnimFrame { slot_index, generation, next_frame_index } => {
+                   if generation != self.generation && generation != self.visible_generation {
+                       return;
                    }
+
+                   let (next_texture, delay_ms, total_frames) = {
+                       let Some(anim) = self.anim_data.get(&(slot_index, generation)) else { return; };
+                       let Some((texture, delay)) = anim.get(next_frame_index) else { return; };
+                       (texture.clone(), *delay, anim.len())
+                   };
+
+                   let textures = if generation % 2 == 0 { &mut self.textures_even } else { &mut self.textures_odd };
+                   if let Some(slot) = textures.get_mut(slot_index) {
+                       *slot = next_texture.upcast::<gtk4::gdk::Paintable>();
+                   }
+
+                   let next_next = (next_frame_index + 1) % total_frames;
+                   let sender_clone = _sender.clone();
+                   gtk4::glib::timeout_add_local(
+                       std::time::Duration::from_millis(delay_ms as u64),
+                       move || {
+                           sender_clone.input(ImageViewMsg::AdvanceAnimFrame {
+                               slot_index,
+                               generation,
+                               next_frame_index: next_next,
+                           });
+                           gtk4::glib::ControlFlow::Break
+                       },
+                   );
                }
                ImageViewMsg::TriggerAction(action) => {
                    match action {
@@ -881,16 +994,15 @@ impl ImageViewModel {
         
         // Simulating the layout logic for spread/single to determine total content size
         if self.spread_mode && textures.len() > 1 {
-             // For spread mode with >1 image, we display 2 images side-by-side
-             // Width is sum of 2, Height is max of 2
-             if let Some(t1) = textures.get(0) {
-                 total_w += t1.intrinsic_width() as f64;
-                 max_h = max_h.max(t1.intrinsic_height() as f64);
-             }
-             if let Some(t2) = textures.get(1) {
-                 total_w += t2.intrinsic_width() as f64;
-                 max_h = max_h.max(t2.intrinsic_height() as f64);
-             }
+             // Normalize both images to the same height so zoom is applied uniformly
+             let t1_w = textures.get(0).map_or(0, |t| t.intrinsic_width()) as f64;
+             let t1_h = textures.get(0).map_or(0, |t| t.intrinsic_height()) as f64;
+             let t2_w = textures.get(1).map_or(0, |t| t.intrinsic_width()) as f64;
+             let t2_h = textures.get(1).map_or(0, |t| t.intrinsic_height()) as f64;
+             max_h = t1_h.max(t2_h);
+             let norm_w1 = if t1_h > 0.0 { t1_w * max_h / t1_h } else { t1_w };
+             let norm_w2 = if t2_h > 0.0 { t2_w * max_h / t2_h } else { t2_w };
+             total_w = norm_w1 + norm_w2;
         } else {
              // Single image
              if let Some(t) = textures.get(0) {
@@ -906,4 +1018,32 @@ impl ImageViewModel {
         
         scale_w.min(scale_h)
     }
+}
+
+fn decode_anim_frames(data: &[u8], ext: &str) -> Vec<AnimFrame> {
+    use image::AnimationDecoder;
+    let cursor = std::io::Cursor::new(data);
+    let frames = match ext {
+        "gif" => image::codecs::gif::GifDecoder::new(cursor)
+            .ok()
+            .and_then(|d| d.into_frames().collect_frames().ok()),
+        "webp" => image::codecs::webp::WebPDecoder::new(cursor)
+            .ok()
+            .and_then(|d| d.into_frames().collect_frames().ok()),
+        _ => None,
+    };
+
+    let frames = match frames {
+        Some(f) if !f.is_empty() => f,
+        _ => return vec![],
+    };
+
+    frames.into_iter().map(|frame| {
+        let (numer, denom) = frame.delay().numer_denom_ms();
+        let delay_ms = if denom == 0 { 100 } else { (numer / denom).max(20) };
+        let buffer = frame.into_buffer();
+        let width = buffer.width();
+        let height = buffer.height();
+        AnimFrame { rgba: buffer.into_raw(), width, height, delay_ms }
+    }).collect()
 }

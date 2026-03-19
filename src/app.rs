@@ -163,7 +163,6 @@ impl SimpleComponent for AppModel {
                 // SidebarOutput::OpenDirectory(path) => AppMsg::DirSelected(path),
                 SidebarOutput::SpreadPages(paths) => AppMsg::SpreadPages(paths),
                 SidebarOutput::PathChanged(p) => AppMsg::PathChanged(p),
-                SidebarOutput::DirSortChanged(s) => AppMsg::DirSortChanged(s),
                 SidebarOutput::ImageSortChanged(s) => AppMsg::ImageSortChanged(s),
                 SidebarOutput::ClearImage => AppMsg::ClearImage,
                 SidebarOutput::RequestNextDir => AppMsg::NextDir,
@@ -310,7 +309,7 @@ impl SimpleComponent for AppModel {
             language: model.settings.language,
         });
         model.sidebar.emit(SidebarMsg::UpdateSpreadMode(model.spread_view));
-        model.sidebar.emit(SidebarMsg::ChangeDirSort(model.current_dir_sort));
+        model.sidebar.emit(SidebarMsg::UpdateDirSort(model.current_dir_sort));
         model.sidebar.emit(SidebarMsg::ChangeImageSort(model.current_image_sort));
         model.sidebar.emit(SidebarMsg::UpdateLoopImages(model.settings.loop_images));
         model.sidebar.emit(SidebarMsg::UpdateSingleFirstPage(model.settings.single_first_page));
@@ -556,7 +555,7 @@ impl SimpleComponent for AppModel {
             }
             AppMsg::DirSortChanged(sort) => {
                 self.current_dir_sort = sort;
-                if let Some(path_str) = &self.last_path {
+                if let Some(path_str) = &self.last_path.clone() {
                      if let Some(helper) = &self.db_helper {
                           let is_archive = path_str.to_lowercase().ends_with(".zip");
                           let target_path_str = if is_archive {
@@ -565,37 +564,45 @@ impl SimpleComponent for AppModel {
                           } else {
                              path_str.clone()
                          };
-                         
-                         let mut ds = if let Ok(Some(existing)) = helper.get_directory_settings(&target_path_str) {
-                             existing
-                         } else {
-                             DirectorySettings {
-                                 path: target_path_str.clone(),
-                                 spread_view: self.settings.default_spread_view, 
-                                 right_to_left: self.settings.default_right_to_left,
-                                 dir_sort: self.settings.default_dir_sort,
-                                 image_sort: self.settings.default_image_sort,
+
+                         // Only update dir_sort; preserve all other fields from existing entry.
+                         // If DB read fails, skip saving to avoid overwriting valid data with defaults.
+                         match helper.get_directory_settings(&target_path_str) {
+                             Ok(maybe_existing) => {
+                                 let mut ds = maybe_existing.unwrap_or_else(|| DirectorySettings {
+                                     path: target_path_str.clone(),
+                                     spread_view: self.spread_view,
+                                     right_to_left: self.right_to_left,
+                                     dir_sort: self.current_dir_sort,
+                                     image_sort: self.current_image_sort,
+                                 });
+                                 ds.dir_sort = sort;
+                                 let _ = helper.save_directory_settings(&ds);
                              }
-                         };
-                         
-                         ds.dir_sort = self.current_dir_sort;
-                         let _ = helper.save_directory_settings(&ds);
+                             Err(e) => eprintln!("DirSortChanged: failed to read dir settings: {}", e),
+                         }
                      }
                 }
-                self.sidebar.emit(SidebarMsg::ChangeDirSort(sort));
+                self.sidebar.emit(SidebarMsg::UpdateDirSort(sort));
             }
              AppMsg::ImageSortChanged(sort) => {
                 self.current_image_sort = sort;
-                if let Some(path) = &self.last_path {
+                if let Some(path) = &self.last_path.clone() {
                      if let Some(helper) = &self.db_helper {
-                         let ds = DirectorySettings {
-                             path: path.clone(),
-                             spread_view: self.spread_view,
-                             right_to_left: self.right_to_left,
-                             dir_sort: self.current_dir_sort,
-                             image_sort: self.current_image_sort,
-                         };
-                         let _ = helper.save_directory_settings(&ds);
+                         match helper.get_directory_settings(path) {
+                             Ok(maybe_existing) => {
+                                 let mut ds = maybe_existing.unwrap_or_else(|| DirectorySettings {
+                                     path: path.clone(),
+                                     spread_view: self.spread_view,
+                                     right_to_left: self.right_to_left,
+                                     dir_sort: self.current_dir_sort,
+                                     image_sort: self.current_image_sort,
+                                 });
+                                 ds.image_sort = sort;
+                                 let _ = helper.save_directory_settings(&ds);
+                             }
+                             Err(e) => eprintln!("ImageSortChanged: failed to read dir settings: {}", e),
+                         }
                      }
                 }
                 self.sidebar.emit(SidebarMsg::ChangeImageSort(sort));
@@ -694,7 +701,7 @@ impl AppModel {
                 language: self.settings.language,
              });
              self.sidebar.emit(SidebarMsg::UpdateSpreadMode(self.spread_view));
-             self.sidebar.emit(SidebarMsg::ChangeDirSort(self.current_dir_sort));
+             self.sidebar.emit(SidebarMsg::UpdateDirSort(self.current_dir_sort));
              self.sidebar.emit(SidebarMsg::ChangeImageSort(self.current_image_sort));
              
              // Check pending image open
@@ -711,18 +718,24 @@ impl AppModel {
 
     fn handle_spread_mode_changed(&mut self, val: bool) {
         self.spread_view = val;
-        
+
         // Save directory settings
         if let Some(helper) = &self.db_helper {
-             if let Some(path) = &self.last_path {
-                 let ds = crate::database::DirectorySettings {
-                     path: path.clone(),
-                     spread_view: self.spread_view,
-                     right_to_left: self.right_to_left,
-                     dir_sort: self.current_dir_sort,
-                     image_sort: self.current_image_sort,
-                  };
-                   let _ = helper.save_directory_settings(&ds);
+             if let Some(path) = &self.last_path.clone() {
+                 match helper.get_directory_settings(path) {
+                     Ok(maybe_existing) => {
+                         let mut ds = maybe_existing.unwrap_or_else(|| crate::database::DirectorySettings {
+                             path: path.clone(),
+                             spread_view: self.spread_view,
+                             right_to_left: self.right_to_left,
+                             dir_sort: self.current_dir_sort,
+                             image_sort: self.current_image_sort,
+                         });
+                         ds.spread_view = self.spread_view;
+                         let _ = helper.save_directory_settings(&ds);
+                     }
+                     Err(e) => eprintln!("SpreadModeChanged: failed to read dir settings: {}", e),
+                 }
             }
         }
         
@@ -748,15 +761,21 @@ impl AppModel {
     fn handle_rtl_changed(&mut self, val: bool) {
         self.right_to_left = val;
         if let Some(helper) = &self.db_helper {
-             if let Some(path_str) = &self.last_path {
-                  let ds = crate::database::DirectorySettings {
-                     path: path_str.clone(),
-                     spread_view: self.spread_view,
-                     right_to_left: self.right_to_left,
-                     dir_sort: self.current_dir_sort,
-                     image_sort: self.current_image_sort,
-                  };
-                   let _ = helper.save_directory_settings(&ds);
+             if let Some(path_str) = &self.last_path.clone() {
+                 match helper.get_directory_settings(path_str) {
+                     Ok(maybe_existing) => {
+                         let mut ds = maybe_existing.unwrap_or_else(|| crate::database::DirectorySettings {
+                             path: path_str.clone(),
+                             spread_view: self.spread_view,
+                             right_to_left: self.right_to_left,
+                             dir_sort: self.current_dir_sort,
+                             image_sort: self.current_image_sort,
+                         });
+                         ds.right_to_left = self.right_to_left;
+                         let _ = helper.save_directory_settings(&ds);
+                     }
+                     Err(e) => eprintln!("RtlChanged: failed to read dir settings: {}", e),
+                 }
              }
         }
         self.image_view.emit(ImageViewMsg::UpdateSettings { 
