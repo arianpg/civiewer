@@ -85,50 +85,38 @@ impl Default for AppSettings {
     }
 }
 
-use std::time::Duration;
-use std::thread;
-
 pub struct DbHelper {
     path: PathBuf,
 }
 
 impl DbHelper {
     pub fn new(path: PathBuf) -> Result<Self> {
-        // Ensure directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        // Test open to fail early if strictly permissions issues, 
-        // but for locking issues we want to be lenient.
-        // However, existing code expects valid DB on init.
-        // Let's just store the path.
+        // Verify the DB can be opened (fails early if path is inaccessible).
+        Database::open_file(&path)?;
         Ok(Self { path })
     }
 
-    fn get_db(&self) -> Result<Database> {
-        let mut attempts = 0;
-        loop {
-            match Database::open_file(&self.path) {
-                Ok(db) => return Ok(db),
-                Err(e) => {
-                    attempts += 1;
-                    if attempts >= 5 {
-                        return Err(anyhow::anyhow!("Failed to open DB after retries: {}", e));
-                    }
-                    eprintln!("DB locked, retrying in 100ms... (attempt {}/5)", attempts);
-                    thread::sleep(Duration::from_millis(100));
-                }
+    /// Open the DB for a single operation. Returns None if the file is locked
+    /// (e.g. by another instance), so callers can skip the operation gracefully.
+    fn try_open(&self) -> Option<Database> {
+        match Database::open_file(&self.path) {
+            Ok(db) => Some(db),
+            Err(e) => {
+                eprintln!("DB temporarily unavailable (another instance may be running): {}", e);
+                None
             }
         }
     }
 
     pub fn get_settings(&self) -> Result<AppSettings> {
-        let db = self.get_db()?;
+        let db = Database::open_file(&self.path)?;
         let collection = db.collection::<AppSettings>("settings");
         if let Ok(Some(settings)) = collection.find_one(polodb_core::bson::doc! { "key": "global" }) {
              Ok(settings)
         } else {
-             // Create default
              let settings = AppSettings::default();
              let _ = collection.insert_one(settings.clone());
              Ok(settings)
@@ -136,7 +124,7 @@ impl DbHelper {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> Result<()> {
-        let db = self.get_db()?;
+        let db = Database::open_file(&self.path)?;
         let collection = db.collection::<AppSettings>("settings");
         let doc = polodb_core::bson::to_document(settings)?;
         let mut update_doc = polodb_core::bson::Document::new();
@@ -144,7 +132,6 @@ impl DbHelper {
 
         if let Ok(result) = collection.update_one(polodb_core::bson::doc! { "key": "global" }, update_doc) {
             if result.modified_count == 0 {
-                // Check if exists
                 if collection.find_one(polodb_core::bson::doc! { "key": "global" })?.is_none() {
                     collection.insert_one(settings.clone())?;
                 }
@@ -154,7 +141,7 @@ impl DbHelper {
     }
 
     pub fn get_app_state(&self) -> Result<AppState> {
-        let db = self.get_db()?;
+        let db = Database::open_file(&self.path)?;
         let collection = db.collection::<AppState>("app_state");
         if let Ok(Some(state)) = collection.find_one(polodb_core::bson::doc! { "key": "global" }) {
             Ok(state)
@@ -164,22 +151,22 @@ impl DbHelper {
     }
 
     pub fn save_app_state(&self, state: &AppState) -> Result<()> {
-         let db = self.get_db()?;
-         let collection = db.collection::<AppState>("app_state");
-         let doc = polodb_core::bson::to_document(state)?;
-         let mut update_doc = polodb_core::bson::Document::new();
-         update_doc.insert("$set", doc);
-         
-         if collection.find_one(polodb_core::bson::doc! { "key": "global" })?.is_none() {
-             collection.insert_one(state.clone())?;
-         } else {
-             let _ = collection.update_one(polodb_core::bson::doc! { "key": "global" }, update_doc);
-         }
-         Ok(())
+        let Some(db) = self.try_open() else { return Ok(()); };
+        let collection = db.collection::<AppState>("app_state");
+        let doc = polodb_core::bson::to_document(state)?;
+        let mut update_doc = polodb_core::bson::Document::new();
+        update_doc.insert("$set", doc);
+
+        if collection.find_one(polodb_core::bson::doc! { "key": "global" })?.is_none() {
+            collection.insert_one(state.clone())?;
+        } else {
+            let _ = collection.update_one(polodb_core::bson::doc! { "key": "global" }, update_doc);
+        }
+        Ok(())
     }
 
     pub fn get_directory_settings(&self, path: &str) -> Result<Option<DirectorySettings>> {
-        let db = self.get_db()?;
+        let Some(db) = self.try_open() else { return Ok(None); };
         let collection = db.collection::<DirectorySettings>("directory_settings");
         if let Ok(Some(settings)) = collection.find_one(polodb_core::bson::doc! { "path": path }) {
             Ok(Some(settings))
@@ -189,12 +176,12 @@ impl DbHelper {
     }
 
     pub fn save_directory_settings(&self, settings: &DirectorySettings) -> Result<()> {
-        let db = self.get_db()?;
+        let Some(db) = self.try_open() else { return Ok(()); };
         let collection = db.collection::<DirectorySettings>("directory_settings");
         let doc = polodb_core::bson::to_document(settings)?;
         let mut update_doc = polodb_core::bson::Document::new();
         update_doc.insert("$set", doc);
-        
+
         if collection.find_one(polodb_core::bson::doc! { "path": &settings.path })?.is_none() {
             collection.insert_one(settings.clone())?;
         } else {

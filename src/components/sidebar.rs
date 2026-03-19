@@ -50,7 +50,7 @@ pub enum SidebarMsg {
     OpenDirectory(PathBuf),
     OpenImage(PathBuf),
 
-    ChangeDirSort(SortType),
+    UpdateDirSort(SortType),
     ChangeImageSort(SortType),
     UpdateSpreadMode(bool),
     GetSpreadPages(PathBuf),
@@ -82,7 +82,6 @@ pub enum SidebarOutput {
     // OpenDirectory(PathBuf),
     SpreadPages(Vec<PathBuf>),
     PathChanged(String),
-    DirSortChanged(SortType),
     ImageSortChanged(SortType),
     ClearImage,
     RequestNextDir,
@@ -385,11 +384,10 @@ impl SimpleComponent for SidebarModel {
                 let _ = _sender.output(SidebarOutput::OpenImage(path));
             }
 
-            SidebarMsg::ChangeDirSort(sort) => {
+            SidebarMsg::UpdateDirSort(sort) => {
                 if self.dir_sort != sort {
-                     self.dir_sort = sort;
-                     self.refresh_view();
-                     let _ = _sender.output(SidebarOutput::DirSortChanged(sort));
+                    self.dir_sort = sort;
+                    self.refresh_view();
                 }
             }
             SidebarMsg::ChangeImageSort(sort) => {

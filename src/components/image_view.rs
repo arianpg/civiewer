@@ -47,6 +47,11 @@ pub struct ImageViewModel {
     generation: u32,
     visible_generation: u32,
     viewport_size: (f64, f64),
+    // Stored DropDown widgets and flags for blocking feedback from programmatic set_selected calls.
+    dir_sort_dropdown: Option<gtk4::DropDown>,
+    img_sort_dropdown: Option<gtk4::DropDown>,
+    programmatic_dir_change: std::rc::Rc<std::cell::Cell<bool>>,
+    programmatic_img_change: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 #[derive(Debug)]
@@ -141,76 +146,24 @@ impl SimpleComponent for ImageViewModel {
                         set_label: "Dir Sort:",
                     },
                     
+                    #[name(dir_sort_dropdown)]
                     gtk4::DropDown {
                         set_model: Some(&gtk4::StringList::new(&[
                             "Name Asc", "Name Desc", "Date Asc", "Date Desc", "Size Asc", "Size Desc"
                         ])),
                         set_focusable: false,
-                        #[watch]
-                        set_selected: match model.dir_sort {
-                            SortType::NameAsc => 0,
-                            SortType::NameDesc => 1,
-                            SortType::DateAsc => 2,
-                            SortType::DateDesc => 3,
-                            SortType::SizeAsc => 4,
-                            SortType::SizeDesc => 5,
-                        },
-                        connect_selected_notify[sender] => move |dd| {
-                            let sort = match dd.selected() {
-                                0 => SortType::NameAsc,
-                                1 => SortType::NameDesc,
-                                2 => SortType::DateAsc,
-                                3 => SortType::DateDesc,
-                                4 => SortType::SizeAsc,
-                                5 => SortType::SizeDesc,
-                                _ => SortType::NameAsc,
-                            };
-                             sender.input(ImageViewMsg::ChangeDirSort(sort));
-                             // Clear focus to return control to the window/view
-                             if let Some(root) = dd.root() {
-                                if let Ok(window) = root.downcast::<gtk4::Window>() {
-                                    gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
-                                }
-                            }
-                        }
                     },
                     
                     gtk4::Label {
                         set_label: "Img Sort:",
                     },
                     
+                    #[name(img_sort_dropdown)]
                     gtk4::DropDown {
                         set_model: Some(&gtk4::StringList::new(&[
                             "Name Asc", "Name Desc", "Date Asc", "Date Desc", "Size Asc", "Size Desc"
                         ])),
                         set_focusable: false,
-                        #[watch]
-                        set_selected: match model.image_sort {
-                            SortType::NameAsc => 0,
-                            SortType::NameDesc => 1,
-                            SortType::DateAsc => 2,
-                            SortType::DateDesc => 3,
-                            SortType::SizeAsc => 4,
-                            SortType::SizeDesc => 5,
-                        },
-                        connect_selected_notify[sender] => move |dd| {
-                             let sort = match dd.selected() {
-                                0 => SortType::NameAsc,
-                                1 => SortType::NameDesc,
-                                2 => SortType::DateAsc,
-                                3 => SortType::DateDesc,
-                                4 => SortType::SizeAsc,
-                                5 => SortType::SizeDesc,
-                                _ => SortType::NameAsc,
-                            };
-                            sender.input(ImageViewMsg::ChangeImageSort(sort));
-                             // Clear focus to return control to the window/view
-                             if let Some(root) = dd.root() {
-                                if let Ok(window) = root.downcast::<gtk4::Window>() {
-                                    gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
-                                }
-                            }
-                        }
                     },
                 },
             },
@@ -553,7 +506,7 @@ impl SimpleComponent for ImageViewModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ImageViewModel {
+        let mut model = ImageViewModel {
             current_paths: Vec::new(),
             textures_even: Vec::new(),
             textures_odd: Vec::new(),
@@ -570,6 +523,10 @@ impl SimpleComponent for ImageViewModel {
             generation: 0,
             visible_generation: 0,
             viewport_size: (0.0, 0.0),
+            dir_sort_dropdown: None,
+            img_sort_dropdown: None,
+            programmatic_dir_change: std::rc::Rc::new(std::cell::Cell::new(false)),
+            programmatic_img_change: std::rc::Rc::new(std::cell::Cell::new(false)),
         };
         
         let drag_state = std::rc::Rc::new(std::cell::RefCell::new((0.0, 0.0)));
@@ -580,6 +537,55 @@ impl SimpleComponent for ImageViewModel {
         let drag_state_odd_2 = drag_state_odd.clone();
         
         let widgets = view_output!();
+
+        // Connect DropDown signals manually so we can skip callbacks during programmatic changes.
+        {
+            let flag = model.programmatic_dir_change.clone();
+            let sender_dd = sender.clone();
+            widgets.dir_sort_dropdown.connect_selected_notify(move |dd| {
+                if flag.get() { return; }
+                let sort = match dd.selected() {
+                    0 => SortType::NameAsc,
+                    1 => SortType::NameDesc,
+                    2 => SortType::DateAsc,
+                    3 => SortType::DateDesc,
+                    4 => SortType::SizeAsc,
+                    5 => SortType::SizeDesc,
+                    _ => SortType::NameAsc,
+                };
+                sender_dd.input(ImageViewMsg::ChangeDirSort(sort));
+                if let Some(root) = dd.root() {
+                    if let Ok(window) = root.downcast::<gtk4::Window>() {
+                        gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
+                    }
+                }
+            });
+            model.dir_sort_dropdown = Some(widgets.dir_sort_dropdown.clone());
+        }
+        {
+            let flag = model.programmatic_img_change.clone();
+            let sender_dd = sender.clone();
+            widgets.img_sort_dropdown.connect_selected_notify(move |dd| {
+                if flag.get() { return; }
+                let sort = match dd.selected() {
+                    0 => SortType::NameAsc,
+                    1 => SortType::NameDesc,
+                    2 => SortType::DateAsc,
+                    3 => SortType::DateDesc,
+                    4 => SortType::SizeAsc,
+                    5 => SortType::SizeDesc,
+                    _ => SortType::NameAsc,
+                };
+                sender_dd.input(ImageViewMsg::ChangeImageSort(sort));
+                if let Some(root) = dd.root() {
+                    if let Ok(window) = root.downcast::<gtk4::Window>() {
+                        gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
+                    }
+                }
+            });
+            model.img_sort_dropdown = Some(widgets.img_sort_dropdown.clone());
+        }
+
         {
             let sender = sender.clone();
             let mut child = widgets.main_stack.first_child();
@@ -840,6 +846,38 @@ impl SimpleComponent for ImageViewModel {
                   self.zoom = 1.0;
               }
               ImageViewMsg::UpdateSettings { spread_mode, right_to_left, dir_sort, image_sort, input_map, language } => {
+                  // Update dropdowns with flag set to suppress the synchronous notify::selected
+                  // callback that GTK4 fires when set_selected changes the value.
+                  if dir_sort != self.dir_sort {
+                      let idx = match dir_sort {
+                          SortType::NameAsc => 0u32,
+                          SortType::NameDesc => 1,
+                          SortType::DateAsc => 2,
+                          SortType::DateDesc => 3,
+                          SortType::SizeAsc => 4,
+                          SortType::SizeDesc => 5,
+                      };
+                      if let Some(ref dd) = self.dir_sort_dropdown {
+                          self.programmatic_dir_change.set(true);
+                          dd.set_selected(idx);
+                          self.programmatic_dir_change.set(false);
+                      }
+                  }
+                  if image_sort != self.image_sort {
+                      let idx = match image_sort {
+                          SortType::NameAsc => 0u32,
+                          SortType::NameDesc => 1,
+                          SortType::DateAsc => 2,
+                          SortType::DateDesc => 3,
+                          SortType::SizeAsc => 4,
+                          SortType::SizeDesc => 5,
+                      };
+                      if let Some(ref dd) = self.img_sort_dropdown {
+                          self.programmatic_img_change.set(true);
+                          dd.set_selected(idx);
+                          self.programmatic_img_change.set(false);
+                      }
+                  }
                   self.spread_mode = spread_mode;
                   self.right_to_left = right_to_left;
                   self.dir_sort = dir_sort;
